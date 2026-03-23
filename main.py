@@ -1,15 +1,23 @@
 # 知识库后端服务
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 import sqlite3
 import os
 from datetime import datetime
+from docx import Document
+from docx.shared import Inches
+from docx.oxml.ns import qn
+import io
+import uuid
+import base64
 
 app = Flask(__name__)
 CORS(app)
 
 # 数据库路径
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'knowledge.db')
+# 图片存储路径
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'images')
 
 
 def get_db():
@@ -177,6 +185,145 @@ def get_stats():
         'total': total,
         'categories': [dict(c) for c in categories]
     })
+
+
+@app.route('/api/upload/word', methods=['POST'])
+def upload_word():
+    """上传并解析Word文件"""
+    if 'file' not in request.files:
+        return jsonify({'error': '没有上传文件'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '没有选择文件'}), 400
+
+    if not file.filename.endswith(('.docx', '.doc')):
+        return jsonify({'error': '只支持 .docx 格式的文件'}), 400
+
+    try:
+        # 确保上传目录存在
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+        # 读取文件内容
+        file_content = file.read()
+        doc = Document(io.BytesIO(file_content))
+
+        # 提取标题（从第一个段落或文件名）
+        title = ''
+        content_parts = []
+        image_count = 0
+
+        # 处理文档中的所有元素（段落和图片）
+        for element in doc.element.body:
+            # 处理段落
+            if element.tag.endswith('p'):
+                # 找到对应的段落对象
+                para = None
+                for p in doc.paragraphs:
+                    if p._element == element:
+                        para = p
+                        break
+
+                if para is None:
+                    continue
+
+                # 检查段落中是否有图片
+                has_image = False
+                for run in para.runs:
+                    if run._element.xpath('.//a:blip'):
+                        has_image = True
+                        # 提取图片
+                        for blip in run._element.xpath('.//a:blip'):
+                            embed = blip.get(qn('r:embed'))
+                            if embed:
+                                # 获取图片数据
+                                image_part = doc.part.related_parts[embed]
+                                image_data = image_part.blob
+
+                                # 生成唯一文件名
+                                image_ext = os.path.splitext(image_part.filename)[1] if image_part.filename else '.png'
+                                image_name = f"{uuid.uuid4().hex}{image_ext}"
+                                image_path = os.path.join(UPLOAD_FOLDER, image_name)
+
+                                # 保存图片
+                                with open(image_path, 'wb') as f:
+                                    f.write(image_data)
+
+                                # 添加Markdown图片引用
+                                image_url = f"/static/uploads/images/{image_name}"
+                                content_parts.append(f"![图片{image_count + 1}]({image_url})")
+                                image_count += 1
+
+                # 处理文本内容
+                text = para.text.strip()
+                if text:
+                    # 第一个非空段落作为标题
+                    if not title and len(content_parts) == 0:
+                        # 检查是否是标题样式
+                        if para.style.name.startswith('Heading'):
+                            title = text
+                        else:
+                            # 如果第一段较短，可能是标题
+                            if len(text) < 100:
+                                title = text
+                            else:
+                                # 根据段落样式转换为Markdown格式
+                                content_parts.append(convert_paragraph_to_markdown(para, text))
+                    else:
+                        # 根据段落样式转换为Markdown格式
+                        content_parts.append(convert_paragraph_to_markdown(para, text))
+
+            # 处理表格
+            elif element.tag.endswith('tbl'):
+                for table in doc.tables:
+                    if table._element == element:
+                        table_md = []
+                        for i, row in enumerate(table.rows):
+                            cells = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+                            table_md.append('| ' + ' | '.join(cells) + ' |')
+                            if i == 0:
+                                # 添加表头分隔线
+                                table_md.append('| ' + ' | '.join(['---'] * len(cells)) + ' |')
+                        content_parts.append('\n'.join(table_md))
+                        break
+
+        # 如果没有提取到标题，使用文件名
+        if not title:
+            title = os.path.splitext(file.filename)[0]
+
+        content = '\n\n'.join(content_parts)
+
+        return jsonify({
+            'title': title,
+            'content': content
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'解析文件失败: {str(e)}'}), 500
+
+
+def convert_paragraph_to_markdown(para, text):
+    """将段落转换为Markdown格式"""
+    style_name = para.style.name
+
+    if style_name == 'Heading 1' or style_name == 'Title':
+        return f'# {text}'
+    elif style_name == 'Heading 2':
+        return f'## {text}'
+    elif style_name == 'Heading 3':
+        return f'### {text}'
+    elif style_name == 'Heading 4':
+        return f'#### {text}'
+    elif style_name == 'List Bullet':
+        return f'- {text}'
+    elif style_name == 'List Number':
+        return f'1. {text}'
+    elif style_name == 'Quote':
+        return f'> {text}'
+    else:
+        return text
 
 
 if __name__ == '__main__':

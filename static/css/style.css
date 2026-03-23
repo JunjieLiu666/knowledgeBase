@@ -1062,6 +1062,40 @@ body {
     font-weight: 600;
 }
 
+/* Word文件上传样式 */
+.file-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #2b579a;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.btn-upload:hover {
+    background: #1e3f6f;
+}
+
+.btn-upload i {
+    font-size: 16px;
+}
+
+.file-name {
+    color: var(--text-light);
+    font-size: 13px;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .detail-title {

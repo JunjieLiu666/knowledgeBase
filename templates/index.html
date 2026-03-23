@@ -118,6 +118,17 @@
                         <label for="docTitle">文章标题</label>
                         <input type="text" id="docTitle" required placeholder="请输入文章标题">
                     </div>
+                    <!-- Word文件上传 -->
+                    <div class="form-group">
+                        <label>从Word文件导入</label>
+                        <div class="file-upload-area">
+                            <input type="file" id="wordFileInput" accept=".docx,.doc" style="display: none;">
+                            <button type="button" class="btn-upload" id="uploadWordBtn">
+                                <i class="fas fa-file-word"></i> 选择Word文件
+                            </button>
+                            <span class="file-name" id="wordFileName">支持 .docx 格式</span>
+                        </div>
+                    </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="docCategory">分类</label>

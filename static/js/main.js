@@ -266,9 +266,64 @@ class KnowledgeBlog {
         textarea.setSelectionRange(newPos, newPos);
     }
 
+    async handleWordUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const fileNameEl = document.getElementById('wordFileName');
+        fileNameEl.textContent = file.name;
+        fileNameEl.style.color = '#27ae60';
+
+        // 显示加载状态
+        this.showNotification('正在解析Word文件...', 'success');
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch(`${this.apiBase}/upload/word`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // 填充表单
+                document.getElementById('docTitle').value = result.title;
+                document.getElementById('docContent').value = result.content;
+                this.showNotification('Word文件解析成功', 'success');
+            } else {
+                this.showNotification(result.error || '解析失败', 'error');
+                fileNameEl.textContent = '解析失败，请重试';
+                fileNameEl.style.color = '#e74c3c';
+            }
+        } catch (error) {
+            console.error('上传失败:', error);
+            this.showNotification('上传失败，请检查网络连接', 'error');
+            fileNameEl.textContent = '上传失败';
+            fileNameEl.style.color = '#e74c3c';
+        }
+
+        // 清空文件输入，允许重复上传同一文件
+        event.target.value = '';
+    }
+
     bindEvents() {
         // 编辑器工具栏
         this.bindToolbarEvents();
+
+        // Word文件上传
+        const uploadWordBtn = document.getElementById('uploadWordBtn');
+        const wordFileInput = document.getElementById('wordFileInput');
+        if (uploadWordBtn && wordFileInput) {
+            uploadWordBtn.addEventListener('click', () => {
+                wordFileInput.click();
+            });
+            wordFileInput.addEventListener('change', (e) => {
+                this.handleWordUpload(e);
+            });
+        }
 
         // 搜索功能
         const searchInput = document.getElementById('searchInput');
