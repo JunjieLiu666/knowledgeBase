@@ -40,233 +40,67 @@
                     <li class="category-item active" data-category="all">
                         <i class="fas fa-th-large"></i>
                         <span>全部文章</span>
-                        <span class="count">12</span>
+                        <span class="count">0</span>
                     </li>
                     <li class="category-item" data-category="tech">
                         <i class="fas fa-code"></i>
                         <span>编程技术</span>
-                        <span class="count">5</span>
+                        <span class="count">0</span>
                     </li>
                     <li class="category-item" data-category="project">
                         <i class="fas fa-project-diagram"></i>
                         <span>项目文档</span>
-                        <span class="count">3</span>
+                        <span class="count">0</span>
                     </li>
                     <li class="category-item" data-category="study">
                         <i class="fas fa-graduation-cap"></i>
                         <span>学习笔记</span>
-                        <span class="count">2</span>
+                        <span class="count">0</span>
                     </li>
                     <li class="category-item" data-category="idea">
                         <i class="fas fa-lightbulb"></i>
                         <span>灵感想法</span>
-                        <span class="count">2</span>
-                    </li>
-                </ul>
-            </div>
-
-            <div class="sidebar-section">
-                <h3><i class="fas fa-tags"></i> 标签</h3>
-                <div class="tag-cloud">
-                    <span class="tag">Python</span>
-                    <span class="tag">JavaScript</span>
-                    <span class="tag">数据库</span>
-                    <span class="tag">算法</span>
-                    <span class="tag">设计模式</span>
-                    <span class="tag">Git</span>
-                </div>
-            </div>
-
-            <div class="sidebar-section">
-                <h3><i class="fas fa-archive"></i> 归档</h3>
-                <ul class="archive-list">
-                    <li class="archive-item">
-                        <span>2024年3月</span>
-                        <span class="count">8</span>
-                    </li>
-                    <li class="archive-item">
-                        <span>2024年2月</span>
-                        <span class="count">4</span>
+                        <span class="count">0</span>
                     </li>
                 </ul>
             </div>
         </aside>
 
-        <!-- 主内容区 - 博客式布局 -->
+        <!-- 主内容区 -->
         <main class="content">
             <!-- 文章列表 -->
             <div class="articles-container" id="articlesContainer">
-                
-                <!-- 文章1 -->
-                <article class="article-card">
-                    <div class="article-header">
-                        <div class="article-meta">
-                            <span class="category-badge tech">编程技术</span>
-                            <span class="article-date"><i class="fas fa-calendar-alt"></i> 2024-03-15</span>
-                            <span class="article-views"><i class="fas fa-eye"></i> 128</span>
-                        </div>
-                        <div class="article-actions">
-                            <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                            <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <h2 class="article-title clickable-title">Python装饰器详解</h2>
-                    <div class="article-tags">
-                        <span class="tag">Python</span>
-                        <span class="tag">装饰器</span>
-                        <span class="tag">高级特性</span>
-                    </div>
-                    <div class="article-summary">
-                        装饰器是Python中一个非常强大的功能，它允许我们在不修改原函数代码的情况下，为函数添加额外的功能。装饰器本质上是一个函数，它接受一个函数作为参数，并返回一个新的函数。常用于日志记录、性能测试、权限验证、缓存和重试机制等场景。
-                    </div>
-                    <div class="article-footer">
-                        <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
-                    </div>
-                </article>
-
-                <!-- 文章2 -->
-                <article class="article-card">
-                    <div class="article-header">
-                        <div class="article-meta">
-                            <span class="category-badge project">项目文档</span>
-                            <span class="article-date"><i class="fas fa-calendar-alt"></i> 2024-03-12</span>
-                            <span class="article-views"><i class="fas fa-eye"></i> 95</span>
-                        </div>
-                        <div class="article-actions">
-                            <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                            <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <h2 class="article-title clickable-title">RESTful API设计规范</h2>
-                    <div class="article-tags">
-                        <span class="tag">API</span>
-                        <span class="tag">REST</span>
-                        <span class="tag">架构</span>
-                    </div>
-                    <div class="article-summary">
-                        REST是一种软件架构风格，定义了创建Web服务的约束条件和原则。核心包括：使用HTTP方法（GET/POST/PUT/DELETE）表示操作，URL使用名词而非动词，使用复数形式和层级关系，合理使用状态码表示请求结果。
-                    </div>
-                    <div class="article-footer">
-                        <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
-                    </div>
-                </article>
-
-                <!-- 文章3 -->
-                <article class="article-card">
-                    <div class="article-header">
-                        <div class="article-meta">
-                            <span class="category-badge study">学习笔记</span>
-                            <span class="article-date"><i class="fas fa-calendar-alt"></i> 2024-03-10</span>
-                            <span class="article-views"><i class="fas fa-eye"></i> 76</span>
-                        </div>
-                        <div class="article-actions">
-                            <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                            <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <h2 class="article-title clickable-title">MySQL性能优化指南</h2>
-                    <div class="article-tags">
-                        <span class="tag">MySQL</span>
-                        <span class="tag">数据库</span>
-                        <span class="tag">性能优化</span>
-                    </div>
-                    <div class="article-summary">
-                        索引是提升数据库查询性能的关键。设计原则包括：为WHERE、JOIN、ORDER BY列创建索引，复合索引遵循最左前缀原则，避免在低选择性列上创建索引。优化建议：避免SELECT *，使用LIMIT限制结果，用JOIN替代子查询。
-                    </div>
-                    <div class="article-footer">
-                        <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
-                    </div>
-                </article>
-
-                <!-- 文章4 -->
-                <article class="article-card">
-                    <div class="article-header">
-                        <div class="article-meta">
-                            <span class="category-badge tech">编程技术</span>
-                            <span class="article-date"><i class="fas fa-calendar-alt"></i> 2024-03-08</span>
-                            <span class="article-views"><i class="fas fa-eye"></i> 64</span>
-                        </div>
-                        <div class="article-actions">
-                            <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                            <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <h2 class="article-title clickable-title">Git工作流程最佳实践</h2>
-                    <div class="article-tags">
-                        <span class="tag">Git</span>
-                        <span class="tag">团队协作</span>
-                        <span class="tag">版本控制</span>
-                    </div>
-                    <div class="article-summary">
-                        Git Flow是一种广泛使用的分支管理策略，定义了严格的分支模型。分支类型包括：master生产环境、develop开发分支、feature功能分支、release发布分支、hotfix紧急修复分支。提交信息应遵循规范格式。
-                    </div>
-                    <div class="article-footer">
-                        <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
-                    </div>
-                </article>
-
-                <!-- 文章5 -->
-                <article class="article-card">
-                    <div class="article-header">
-                        <div class="article-meta">
-                            <span class="category-badge idea">灵感想法</span>
-                            <span class="article-date"><i class="fas fa-calendar-alt"></i> 2024-03-05</span>
-                            <span class="article-views"><i class="fas fa-eye"></i> 52</span>
-                        </div>
-                        <div class="article-actions">
-                            <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                            <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                    <h2 class="article-title clickable-title">Docker容器化部署实践</h2>
-                    <div class="article-tags">
-                        <span class="tag">Docker</span>
-                        <span class="tag">容器化</span>
-                        <span class="tag">DevOps</span>
-                    </div>
-                    <div class="article-summary">
-                        Docker提供轻量级虚拟化方案，保证应用在任何环境中以相同方式运行。最佳实践包括：使用多阶段构建减小镜像大小，合理设计Dockerfile，使用Docker Compose管理多容器应用。
-                    </div>
-                    <div class="article-footer">
-                        <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
-                    </div>
-                </article>
-
+                <!-- 文章由JS动态渲染 -->
             </div>
 
             <!-- 分页 -->
             <div class="pagination">
-                <button class="page-btn" disabled><i class="fas fa-chevron-left"></i></button>
-                <button class="page-btn active">1</button>
-                <button class="page-btn">2</button>
-                <button class="page-btn">3</button>
-                <button class="page-btn"><i class="fas fa-chevron-right"></i></button>
+                <!-- 分页由JS动态渲染 -->
+            </div>
+
+            <!-- 文章详情视图 -->
+            <div class="article-detail-view" id="articleDetailView" style="display: none;">
+                <div class="detail-header">
+                    <button class="btn-back" id="backToList">
+                        <i class="fas fa-arrow-left"></i> 返回列表
+                    </button>
+                    <div class="detail-actions">
+                        <button class="btn-action" id="editDetailArticle" title="编辑"><i class="fas fa-edit"></i></button>
+                        <button class="btn-action" id="deleteDetailArticle" title="删除"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                <article class="detail-content">
+                    <div class="detail-meta">
+                        <span class="category-badge" id="detailCategory"></span>
+                        <span class="detail-date"><i class="fas fa-calendar-alt"></i> <span id="detailDate"></span></span>
+                        <span class="detail-views"><i class="fas fa-eye"></i> <span id="detailViews"></span></span>
+                    </div>
+                    <h1 class="detail-title" id="detailTitle"></h1>
+                    <div class="detail-tags" id="detailTags"></div>
+                    <div class="detail-body" id="detailBody"></div>
+                </article>
             </div>
         </main>
-    </div>
-
-
-    <!-- 文章详情视图 -->
-    <div class="article-detail-view" id="articleDetailView" style="display: none;">
-        <div class="detail-header">
-            <button class="btn-back" id="backToList">
-                <i class="fas fa-arrow-left"></i> 返回列表
-            </button>
-            <div class="detail-actions">
-                <button class="btn-action" id="editDetailArticle" title="编辑"><i class="fas fa-edit"></i></button>
-                <button class="btn-action" id="deleteDetailArticle" title="删除"><i class="fas fa-trash"></i></button>
-            </div>
-        </div>
-        <article class="detail-content">
-            <div class="detail-meta">
-                <span class="category-badge" id="detailCategory"></span>
-                <span class="detail-date"><i class="fas fa-calendar-alt"></i> <span id="detailDate"></span></span>
-                <span class="detail-views"><i class="fas fa-eye"></i> <span id="detailViews"></span></span>
-            </div>
-            <h1 class="detail-title" id="detailTitle"></h1>
-            <div class="detail-tags" id="detailTags"></div>
-            <div class="detail-body" id="detailBody"></div>
-        </article>
     </div>
 
     <!-- 新建/编辑文章模态框 -->
@@ -298,7 +132,7 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="docContent">文章内容（支持Markdown）</label>
+                        <label for="docContent">文章内容</label>
                         <textarea id="docContent" rows="20" placeholder="请输入文章内容..."></textarea>
                     </div>
                 </form>

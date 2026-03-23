@@ -2,12 +2,181 @@
 
 class KnowledgeBlog {
     constructor() {
+        this.apiBase = '/api';
+        this.articles = [];
+        this.currentPage = 1;
+        this.articlesPerPage = 6;
+        this.currentCategory = 'all';
+        this.searchQuery = '';
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.loadArticles();
         this.bindEvents();
+        this.renderArticles();
+        this.updateStats();
+    }
+
+    async loadArticles() {
+        try {
+            const response = await fetch(`${this.apiBase}/articles`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.articles = await response.json();
+        } catch (error) {
+            console.error('加载文章失败:', error);
+            this.showNotification('无法连接到服务器，请确保已启动后端服务 (python main.py)', 'error');
+            // 显示空状态提示
+            const container = document.getElementById('articlesContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: #7f8c8d;">
+                        <i class="fas fa-server" style="font-size: 48px; margin-bottom: 20px;"></i>
+                        <h3>无法连接到服务器</h3>
+                        <p style="margin-top: 10px;">请先启动后端服务：</p>
+                        <code style="background: #f0f0f0; padding: 8px 16px; border-radius: 4px; display: inline-block; margin-top: 10px;">python main.py</code>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async updateStats() {
+        try {
+            const response = await fetch(`${this.apiBase}/stats`);
+            const stats = await response.json();
+
+            // 更新分类计数
+            const categoryItems = document.querySelectorAll('.category-item');
+            categoryItems.forEach(item => {
+                const category = item.dataset.category;
+                const countEl = item.querySelector('.count');
+                if (countEl) {
+                    if (category === 'all') {
+                        countEl.textContent = stats.total;
+                    } else {
+                        const catStat = stats.categories.find(c => c.category === category);
+                        countEl.textContent = catStat ? catStat.count : 0;
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('更新统计失败:', error);
+        }
+    }
+
+    getFilteredArticles() {
+        let filtered = this.articles;
+
+        // 分类筛选
+        if (this.currentCategory !== 'all') {
+            filtered = filtered.filter(a => a.category === this.currentCategory);
+        }
+
+        // 搜索筛选
+        if (this.searchQuery) {
+            const query = this.searchQuery.toLowerCase();
+            filtered = filtered.filter(a => {
+                const title = a.title.toLowerCase();
+                const content = a.content.toLowerCase();
+                const tags = (a.tags || '').toLowerCase();
+                return title.includes(query) || content.includes(query) || tags.includes(query);
+            });
+        }
+
+        return filtered;
+    }
+
+    renderArticles() {
+        const container = document.getElementById('articlesContainer');
+        if (!container) return;
+
+        const filtered = this.getFilteredArticles();
+        const startIndex = (this.currentPage - 1) * this.articlesPerPage;
+        const endIndex = startIndex + this.articlesPerPage;
+        const pageArticles = filtered.slice(startIndex, endIndex);
+
+        container.innerHTML = pageArticles.map(article => this.createArticleCard(article)).join('');
+
         this.bindArticleClickEvents();
+        this.updatePagination(filtered.length);
+    }
+
+    createArticleCard(article) {
+        const categoryNames = {
+            'tech': '编程技术',
+            'project': '项目文档',
+            'study': '学习笔记',
+            'idea': '灵感想法'
+        };
+
+        const tags = article.tags ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+
+        return `
+            <article class="article-card" data-id="${article.id}">
+                <div class="article-header">
+                    <div class="article-meta">
+                        <span class="category-badge ${article.category}">${categoryNames[article.category] || article.category}</span>
+                        <span class="article-date"><i class="fas fa-calendar-alt"></i> ${article.created_at}</span>
+                        <span class="article-views"><i class="fas fa-eye"></i> ${article.views}</span>
+                    </div>
+                    <div class="article-actions">
+                        <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
+                        <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                <h2 class="article-title clickable-title">${article.title}</h2>
+                <div class="article-tags">${tags}</div>
+                <div class="article-summary">${article.content}</div>
+                <div class="article-footer">
+                    <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
+                </div>
+            </article>
+        `;
+    }
+
+    updatePagination(total) {
+        const totalPages = Math.ceil(total / this.articlesPerPage);
+        const pagination = document.querySelector('.pagination');
+        if (!pagination) return;
+
+        let html = `<button class="page-btn" ${this.currentPage === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>`;
+
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<button class="page-btn ${i === this.currentPage ? 'active' : ''}">${i}</button>`;
+        }
+
+        html += `<button class="page-btn" ${this.currentPage === totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
+        pagination.innerHTML = html;
+
+        this.bindPaginationEvents(totalPages);
+    }
+
+    bindPaginationEvents(totalPages) {
+        const buttons = document.querySelectorAll('.page-btn');
+        buttons.forEach((btn, index) => {
+            btn.addEventListener('click', () => {
+                if (index === 0) {
+                    // 上一页
+                    if (this.currentPage > 1) {
+                        this.currentPage--;
+                        this.renderArticles();
+                    }
+                } else if (index === buttons.length - 1) {
+                    // 下一页
+                    if (this.currentPage < totalPages) {
+                        this.currentPage++;
+                        this.renderArticles();
+                    }
+                } else {
+                    // 具体页码
+                    this.currentPage = index;
+                    this.renderArticles();
+                }
+            });
+        });
     }
 
     bindEvents() {
@@ -15,7 +184,9 @@ class KnowledgeBlog {
         const searchInput = document.getElementById('searchInput');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-                this.handleSearch(e.target.value);
+                this.searchQuery = e.target.value;
+                this.currentPage = 1;
+                this.renderArticles();
             });
         }
 
@@ -23,14 +194,11 @@ class KnowledgeBlog {
         const categoryItems = document.querySelectorAll('.category-item');
         categoryItems.forEach(item => {
             item.addEventListener('click', () => {
-                this.switchCategory(item);
-            });
-        });
-
-        // 标签点击
-        document.querySelectorAll('.tag').forEach(tag => {
-            tag.addEventListener('click', () => {
-                this.filterByTag(tag.textContent);
+                categoryItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                this.currentCategory = item.dataset.category;
+                this.currentPage = 1;
+                this.renderArticles();
             });
         });
 
@@ -58,6 +226,12 @@ class KnowledgeBlog {
         }
 
         // 保存文章
+        const saveBtn = document.getElementById('saveBtn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                this.saveArticle();
+            });
+        }
 
         // 返回列表按钮
         const backBtn = document.getElementById('backToList');
@@ -66,40 +240,28 @@ class KnowledgeBlog {
                 this.hideArticleDetail();
             });
         }
-        
+
         // 详情页编辑按钮
         const editDetailBtn = document.getElementById('editDetailArticle');
         if (editDetailBtn) {
             editDetailBtn.addEventListener('click', () => {
-                if (this.currentArticleCard) {
-                    this.editArticle(this.currentArticleCard);
+                if (this.currentArticle) {
+                    this.editArticle(this.currentArticle);
                     this.hideArticleDetail();
                 }
             });
         }
-        
+
         // 详情页删除按钮
         const deleteDetailBtn = document.getElementById('deleteDetailArticle');
         if (deleteDetailBtn) {
             deleteDetailBtn.addEventListener('click', () => {
-                if (this.currentArticleCard) {
-                    this.deleteArticle(this.currentArticleCard);
+                if (this.currentArticle) {
+                    this.deleteArticle(this.currentArticle.id);
                     this.hideArticleDetail();
                 }
             });
         }
-
-        const saveBtn = document.getElementById('saveBtn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => {
-                this.saveArticle();
-            });
-        }
-
-        // 文章操作按钮
-        document.querySelectorAll('.article-card').forEach(card => {
-            this.bindArticleEvents(card);
-        });
 
         // 点击模态框外部关闭
         document.querySelectorAll('.modal').forEach(modal => {
@@ -120,101 +282,116 @@ class KnowledgeBlog {
         });
     }
 
-    bindArticleEvents(card) {
-        // 展开/收起文章
-        const readMoreBtn = card.querySelector('.btn-read-more');
-        const content = card.querySelector('.article-content');
-        
-        if (readMoreBtn && content) {
-            readMoreBtn.addEventListener('click', () => {
-                const isExpanded = content.classList.toggle('expanded');
-                readMoreBtn.innerHTML = isExpanded 
-                    ? '收起文章 <i class="fas fa-chevron-up"></i>'
-                    : '展开全文 <i class="fas fa-chevron-down"></i>';
-            });
-        }
-
-        // 编辑按钮
-        const editBtn = card.querySelector('.btn-action[title="编辑"]');
-        if (editBtn) {
-            editBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.editArticle(card);
-            });
-        }
-
-        // 删除按钮
-        const deleteBtn = card.querySelector('.btn-action[title="删除"]');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteArticle(card);
-            });
-        }
-
-        // 点击标题展开文章
-        const title = card.querySelector('.article-title');
-        if (title) {
-            title.addEventListener('click', () => {
-                if (!content.classList.contains('expanded')) {
-                    content.classList.add('expanded');
-                    readMoreBtn.innerHTML = '收起文章 <i class="fas fa-chevron-up"></i>';
-                }
-            });
-        }
-    }
-
-    handleSearch(query) {
+    bindArticleClickEvents() {
         const articles = document.querySelectorAll('.article-card');
-        const lowerQuery = query.toLowerCase();
-        
         articles.forEach(article => {
-            const title = article.querySelector('.article-title').textContent.toLowerCase();
-            const content = article.querySelector('.article-content').textContent.toLowerCase();
-            const tags = Array.from(article.querySelectorAll('.article-tags .tag'))
-                .map(t => t.textContent.toLowerCase()).join(' ');
-            
-            const searchText = `${title} ${content} ${tags}`;
-            article.style.display = searchText.includes(lowerQuery) ? 'block' : 'none';
+            const articleId = parseInt(article.dataset.id);
+
+            // 点击标题跳转
+            const title = article.querySelector('.article-title');
+            if (title) {
+                title.style.cursor = 'pointer';
+                title.addEventListener('click', () => {
+                    this.showArticleDetail(articleId);
+                });
+            }
+
+            // 点击阅读全文按钮跳转
+            const readMoreBtn = article.querySelector('.btn-read-more');
+            if (readMoreBtn) {
+                readMoreBtn.addEventListener('click', () => {
+                    this.showArticleDetail(articleId);
+                });
+            }
+
+            // 编辑按钮
+            const editBtn = article.querySelector('.article-actions .btn-action:first-child');
+            if (editBtn) {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.editArticle(this.articles.find(a => a.id === articleId));
+                });
+            }
+
+            // 删除按钮
+            const deleteBtn = article.querySelector('.article-actions .btn-action:last-child');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteArticle(articleId);
+                });
+            }
         });
     }
 
-    switchCategory(item) {
-        const categoryItems = document.querySelectorAll('.category-item');
-        categoryItems.forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
-        
-        const category = item.dataset.category;
-        this.filterByCategory(category);
+    async showArticleDetail(articleId) {
+        const article = this.articles.find(a => a.id === articleId);
+        if (!article) return;
+
+        // 增加阅读量
+        try {
+            await fetch(`${this.apiBase}/articles/${articleId}/view`, { method: 'POST' });
+            article.views++;
+        } catch (error) {
+            console.error('更新阅读量失败:', error);
+        }
+
+        this.currentArticle = article;
+
+        const categoryNames = {
+            'tech': '编程技术',
+            'project': '项目文档',
+            'study': '学习笔记',
+            'idea': '灵感想法'
+        };
+
+        // 填充详情页
+        document.getElementById('detailTitle').textContent = article.title;
+        document.getElementById('detailCategory').textContent = categoryNames[article.category] || article.category;
+        document.getElementById('detailCategory').className = 'category-badge ' + article.category;
+        document.getElementById('detailDate').textContent = article.created_at;
+        document.getElementById('detailViews').textContent = article.views;
+
+        const tags = article.tags ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+        document.getElementById('detailTags').innerHTML = tags;
+        document.getElementById('detailBody').innerHTML = article.content;
+
+        // 切换视图
+        const detailView = document.getElementById('articleDetailView');
+        const articlesContainer = document.getElementById('articlesContainer');
+        const pagination = document.querySelector('.pagination');
+
+        articlesContainer.style.display = 'none';
+        pagination.style.display = 'none';
+        detailView.style.display = 'block';
+
+        // 滚动到顶部
+        window.scrollTo(0, 0);
     }
 
-    filterByCategory(category) {
-        const articles = document.querySelectorAll('.article-card');
-        
-        if (category === 'all') {
-            articles.forEach(article => article.style.display = 'block');
-        } else {
-            articles.forEach(article => {
-                const badge = article.querySelector('.category-badge');
-                const articleCategory = badge ? badge.classList[1] : '';
-                article.style.display = articleCategory === category ? 'block' : 'none';
-            });
-        }
-    }
+    hideArticleDetail() {
+        const detailView = document.getElementById('articleDetailView');
+        const articlesContainer = document.getElementById('articlesContainer');
+        const pagination = document.querySelector('.pagination');
 
-    filterByTag(tag) {
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.value = tag;
-            this.handleSearch(tag);
-        }
+        detailView.style.display = 'none';
+        articlesContainer.style.display = 'grid';
+        pagination.style.display = 'flex';
+
+        this.renderArticles();
     }
 
     openModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
+            // 重置表单
+            document.getElementById('docTitle').value = '';
+            document.getElementById('docCategory').value = 'tech';
+            document.getElementById('docTags').value = '';
+            document.getElementById('docContent').value = '';
+            document.getElementById('modalTitle').textContent = '写文章';
+            this.editingArticleId = null;
         }
     }
 
@@ -222,154 +399,76 @@ class KnowledgeBlog {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.remove('active');
-            document.body.style.overflow = '';
         }
     }
 
-    saveArticle() {
+    editArticle(article) {
+        this.editingArticleId = article.id;
+        document.getElementById('docTitle').value = article.title;
+        document.getElementById('docCategory').value = article.category;
+        document.getElementById('docTags').value = article.tags || '';
+        document.getElementById('docContent').value = article.content;
+        document.getElementById('modalTitle').textContent = '编辑文章';
+        this.openModal('docModal');
+    }
+
+    async saveArticle() {
         const title = document.getElementById('docTitle').value;
         const category = document.getElementById('docCategory').value;
         const tags = document.getElementById('docTags').value;
         const content = document.getElementById('docContent').value;
 
-        if (!title) {
-            this.showNotification('请输入文章标题', 'error');
+        if (!title || !content) {
+            this.showNotification('请填写标题和内容', 'error');
             return;
         }
 
-        if (!content) {
-            this.showNotification('请输入文章内容', 'error');
-            return;
-        }
+        const data = { title, category, tags, content };
 
-        const articleData = {
-            title,
-            category,
-            tags: tags.split(',').map(t => t.trim()).filter(t => t),
-            content,
-            createdAt: new Date().toISOString()
-        };
-
-        console.log('保存文章:', articleData);
-        
-        // 这里可以调用API保存文章
-        this.closeModal('docModal');
-        this.showNotification('文章发布成功！');
-        this.clearForm();
-        
-        // 刷新页面或添加新文章到列表
-        // location.reload();
-    }
-
-    clearForm() {
-        document.getElementById('docTitle').value = '';
-        document.getElementById('docCategory').value = 'tech';
-        document.getElementById('docTags').value = '';
-        document.getElementById('docContent').value = '';
-    }
-
-    editArticle(card) {
-        const title = card.querySelector('.article-title').textContent;
-        const content = card.querySelector('.article-content').innerText;
-        const tags = Array.from(card.querySelectorAll('.article-tags .tag'))
-            .map(t => t.textContent).join(', ');
-        const categoryBadge = card.querySelector('.category-badge');
-        const category = categoryBadge ? categoryBadge.classList[1] : 'tech';
-
-        document.getElementById('modalTitle').textContent = '编辑文章';
-        document.getElementById('docTitle').value = title;
-        document.getElementById('docContent').value = content;
-        document.getElementById('docTags').value = tags;
-        document.getElementById('docCategory').value = category;
-
-        this.openModal('docModal');
-    }
-
-    deleteArticle(card) {
-        if (confirm('确定要删除这篇文章吗？')) {
-            card.style.animation = 'fadeOut 0.3s ease';
-            setTimeout(() => {
-                card.remove();
-                this.showNotification('文章已删除');
-            }, 300);
-        }
-    }
-
-
-    // 文章详情相关方法
-    showArticleDetail(articleCard) {
-        const detailView = document.getElementById('articleDetailView');
-        const articlesContainer = document.getElementById('articlesContainer');
-        const pagination = document.querySelector('.pagination');
-        
-        // 获取文章数据
-        const title = articleCard.querySelector('.article-title').textContent;
-        const category = articleCard.querySelector('.category-badge').textContent;
-        const categoryClass = articleCard.querySelector('.category-badge').classList[1];
-        const date = articleCard.querySelector('.article-date').textContent.trim();
-        const views = articleCard.querySelector('.article-views').textContent.trim();
-        const tags = articleCard.querySelector('.article-tags').innerHTML;
-        
-        // 获取完整内容（从隐藏的 full-content 中获取，如果没有则使用 summary）
-        let fullContent = articleCard.querySelector('.article-full-content');
-        if (!fullContent) {
-            // 如果没有完整内容，创建一个（将 summary 内容作为完整内容）
-            const summary = articleCard.querySelector('.article-summary');
-            fullContent = summary;
-        }
-        
-        // 填充详情页
-        document.getElementById('detailTitle').textContent = title;
-        document.getElementById('detailCategory').textContent = category;
-        document.getElementById('detailCategory').className = 'category-badge ' + categoryClass;
-        document.getElementById('detailDate').textContent = date.replace(/^[\s\S]*?\s/, '');
-        document.getElementById('detailViews').textContent = views.replace(/^[\s\S]*?\s/, '');
-        document.getElementById('detailTags').innerHTML = tags;
-        document.getElementById('detailBody').innerHTML = fullContent.innerHTML;
-        
-        // 保存当前文章卡片的引用
-        this.currentArticleCard = articleCard;
-        
-        // 切换视图
-        articlesContainer.style.display = 'none';
-        pagination.style.display = 'none';
-        detailView.style.display = 'block';
-        
-        // 滚动到顶部
-        window.scrollTo(0, 0);
-    }
-    
-    hideArticleDetail() {
-        const detailView = document.getElementById('articleDetailView');
-        const articlesContainer = document.getElementById('articlesContainer');
-        const pagination = document.querySelector('.pagination');
-        
-        detailView.style.display = 'none';
-        articlesContainer.style.display = 'block';
-        pagination.style.display = 'flex';
-    }
-    
-    // 为文章卡片绑定点击事件
-    bindArticleClickEvents() {
-        const articles = document.querySelectorAll('.article-card');
-        articles.forEach(article => {
-            // 点击标题跳转
-            const title = article.querySelector('.article-title');
-            if (title) {
-                title.style.cursor = 'pointer';
-                title.addEventListener('click', () => {
-                    this.showArticleDetail(article);
+        try {
+            if (this.editingArticleId) {
+                // 更新
+                await fetch(`${this.apiBase}/articles/${this.editingArticleId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
                 });
-            }
-            
-            // 点击阅读全文按钮跳转
-            const readMoreBtn = article.querySelector('.btn-read-more');
-            if (readMoreBtn) {
-                readMoreBtn.addEventListener('click', () => {
-                    this.showArticleDetail(article);
+                this.showNotification('文章更新成功');
+            } else {
+                // 创建
+                await fetch(`${this.apiBase}/articles`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
                 });
+                this.showNotification('文章发布成功');
             }
-        });
+
+            this.closeModal('docModal');
+            await this.loadArticles();
+            this.renderArticles();
+            this.updateStats();
+        } catch (error) {
+            console.error('保存失败:', error);
+            this.showNotification('保存失败', 'error');
+        }
+    }
+
+    async deleteArticle(articleId) {
+        if (!confirm('确定要删除这篇文章吗？')) return;
+
+        try {
+            await fetch(`${this.apiBase}/articles/${articleId}`, {
+                method: 'DELETE'
+            });
+            this.showNotification('文章已删除');
+            await this.loadArticles();
+            this.renderArticles();
+            this.updateStats();
+        } catch (error) {
+            console.error('删除失败:', error);
+            this.showNotification('删除失败', 'error');
+        }
     }
 
     showNotification(message, type = 'success') {
@@ -379,7 +478,7 @@ class KnowledgeBlog {
             <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
             <span>${message}</span>
         `;
-        
+
         notification.style.cssText = `
             position: fixed;
             top: 80px;
