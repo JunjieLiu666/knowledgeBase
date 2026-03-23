@@ -104,6 +104,19 @@ class KnowledgeBlog {
         this.updatePagination(filtered.length);
     }
 
+    renderMarkdown(content) {
+        if (typeof marked !== 'undefined') {
+            // 配置marked选项
+            marked.setOptions({
+                breaks: true,
+                gfm: true
+            });
+            return marked.parse(content);
+        }
+        // 如果marked库未加载，返回原始内容
+        return content.replace(/\n/g, '<br>');
+    }
+
     createArticleCard(article) {
         const categoryNames = {
             'tech': '编程技术',
@@ -113,6 +126,10 @@ class KnowledgeBlog {
         };
 
         const tags = article.tags ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+
+        // 获取摘要（前200个字符）
+        const plainText = article.content.replace(/[#*`>\-\[\]]/g, '').replace(/\n/g, ' ');
+        const summary = plainText.length > 200 ? plainText.substring(0, 200) + '...' : plainText;
 
         return `
             <article class="article-card" data-id="${article.id}">
@@ -129,7 +146,7 @@ class KnowledgeBlog {
                 </div>
                 <h2 class="article-title clickable-title">${article.title}</h2>
                 <div class="article-tags">${tags}</div>
-                <div class="article-summary">${article.content}</div>
+                <div class="article-summary">${summary}</div>
                 <div class="article-footer">
                     <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
                 </div>
@@ -179,7 +196,80 @@ class KnowledgeBlog {
         });
     }
 
+    bindToolbarEvents() {
+        const toolbarBtns = document.querySelectorAll('.toolbar-btn');
+        const textarea = document.getElementById('docContent');
+
+        toolbarBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                this.insertMarkdown(action, textarea);
+            });
+        });
+    }
+
+    insertMarkdown(action, textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const selectedText = textarea.value.substring(start, end);
+        let replacement = '';
+        let cursorOffset = 0;
+
+        switch (action) {
+            case 'bold':
+                replacement = `**${selectedText || '粗体文字'}**`;
+                cursorOffset = selectedText ? 0 : -2;
+                break;
+            case 'italic':
+                replacement = `*${selectedText || '斜体文字'}*`;
+                cursorOffset = selectedText ? 0 : -1;
+                break;
+            case 'heading':
+                replacement = `\n## ${selectedText || '标题'}\n`;
+                cursorOffset = selectedText ? 0 : -1;
+                break;
+            case 'link':
+                replacement = `[${selectedText || '链接文字'}](url)`;
+                cursorOffset = selectedText ? -1 : -5;
+                break;
+            case 'image':
+                replacement = `![${selectedText || '图片描述'}](图片URL)`;
+                cursorOffset = selectedText ? -1 : -5;
+                break;
+            case 'list':
+                replacement = `\n- ${selectedText || '列表项'}\n`;
+                cursorOffset = selectedText ? 0 : -1;
+                break;
+            case 'quote':
+                replacement = `\n> ${selectedText || '引用内容'}\n`;
+                cursorOffset = selectedText ? 0 : -1;
+                break;
+            case 'code':
+                if (selectedText.includes('\n')) {
+                    replacement = `\n\`\`\`\n${selectedText}\n\`\`\`\n`;
+                } else {
+                    replacement = `\`${selectedText || '代码'}\``;
+                    cursorOffset = selectedText ? 0 : -1;
+                }
+                break;
+            case 'hr':
+                replacement = '\n---\n';
+                break;
+        }
+
+        // 插入文本
+        textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+
+        // 设置光标位置
+        const newPos = start + replacement.length + cursorOffset;
+        textarea.focus();
+        textarea.setSelectionRange(newPos, newPos);
+    }
+
     bindEvents() {
+        // 编辑器工具栏
+        this.bindToolbarEvents();
+
         // 搜索功能
         const searchInput = document.getElementById('searchInput');
         if (searchInput) {
@@ -354,7 +444,8 @@ class KnowledgeBlog {
 
         const tags = article.tags ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
         document.getElementById('detailTags').innerHTML = tags;
-        document.getElementById('detailBody').innerHTML = article.content;
+        // 使用Markdown渲染内容
+        document.getElementById('detailBody').innerHTML = this.renderMarkdown(article.content);
 
         // 切换视图
         const detailView = document.getElementById('articleDetailView');
@@ -409,7 +500,11 @@ class KnowledgeBlog {
         document.getElementById('docTags').value = article.tags || '';
         document.getElementById('docContent').value = article.content;
         document.getElementById('modalTitle').textContent = '编辑文章';
-        this.openModal('docModal');
+        // 直接打开模态框，不重置表单
+        const modal = document.getElementById('docModal');
+        if (modal) {
+            modal.classList.add('active');
+        }
     }
 
     async saveArticle() {
