@@ -8,6 +8,24 @@ class KnowledgeBlog {
         this.articlesPerPage = 6;
         this.currentCategory = 'all';
         this.searchQuery = '';
+
+        // 分类名称映射
+        this.categoryNames = {
+            'all': '全部文章',
+            'tech': '编程技术',
+            'project': '项目文档',
+            'study': '学习笔记',
+            'idea': '灵感想法'
+        };
+
+        // 分类图标映射
+        this.categoryIcons = {
+            'tech': 'fa-code',
+            'project': 'fa-project-diagram',
+            'study': 'fa-graduation-cap',
+            'idea': 'fa-lightbulb'
+        };
+
         this.init();
     }
 
@@ -111,7 +129,9 @@ class KnowledgeBlog {
                 breaks: true,
                 gfm: true
             });
-            return marked.parse(content);
+            // 先解析Markdown，然后处理HTML标签
+            let html = marked.parse(content);
+            return html;
         }
         // 如果marked库未加载，返回原始内容
         return content.replace(/\n/g, '<br>');
@@ -266,22 +286,32 @@ class KnowledgeBlog {
         textarea.setSelectionRange(newPos, newPos);
     }
 
-    async handleWordUpload(event) {
+    async handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
 
-        const fileNameEl = document.getElementById('wordFileName');
+        const fileNameEl = document.getElementById('fileName');
         fileNameEl.textContent = file.name;
         fileNameEl.style.color = '#27ae60';
 
+        // 获取文件扩展名
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        const fileTypes = {
+            'docx': 'Word',
+            'doc': 'Word',
+            'pdf': 'PDF',
+            'ofd': 'OFD'
+        };
+        const fileType = fileTypes[fileExt] || '文件';
+
         // 显示加载状态
-        this.showNotification('正在解析Word文件...', 'success');
+        this.showNotification(`正在解析${fileType}文件...`, 'success');
 
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const response = await fetch(`${this.apiBase}/upload/word`, {
+            const response = await fetch(`${this.apiBase}/upload/file`, {
                 method: 'POST',
                 body: formData
             });
@@ -292,7 +322,7 @@ class KnowledgeBlog {
                 // 填充表单
                 document.getElementById('docTitle').value = result.title;
                 document.getElementById('docContent').value = result.content;
-                this.showNotification('Word文件解析成功', 'success');
+                this.showNotification(`${fileType}文件解析成功`, 'success');
             } else {
                 this.showNotification(result.error || '解析失败', 'error');
                 fileNameEl.textContent = '解析失败，请重试';
@@ -313,15 +343,15 @@ class KnowledgeBlog {
         // 编辑器工具栏
         this.bindToolbarEvents();
 
-        // Word文件上传
-        const uploadWordBtn = document.getElementById('uploadWordBtn');
-        const wordFileInput = document.getElementById('wordFileInput');
-        if (uploadWordBtn && wordFileInput) {
-            uploadWordBtn.addEventListener('click', () => {
-                wordFileInput.click();
+        // 文件上传
+        const uploadFileBtn = document.getElementById('uploadFileBtn');
+        const fileInput = document.getElementById('fileInput');
+        if (uploadFileBtn && fileInput) {
+            uploadFileBtn.addEventListener('click', () => {
+                fileInput.click();
             });
-            wordFileInput.addEventListener('change', (e) => {
-                this.handleWordUpload(e);
+            fileInput.addEventListener('change', (e) => {
+                this.handleFileUpload(e);
             });
         }
 
@@ -352,6 +382,89 @@ class KnowledgeBlog {
         if (addDocBtn) {
             addDocBtn.addEventListener('click', () => {
                 this.openModal('docModal');
+            });
+        }
+
+        // 设置按钮 - 打开系统设置
+        const settingsBtn = document.getElementById('settingsBtn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                this.openSettings();
+            });
+        }
+
+        // 系统设置模态框关闭
+        const closeSettingsModal = document.getElementById('closeSettingsModal');
+        if (closeSettingsModal) {
+            closeSettingsModal.addEventListener('click', () => {
+                this.closeModal('settingsModal');
+            });
+        }
+
+        // 设置标签页切换
+        const settingsTabs = document.querySelectorAll('.settings-tab');
+        settingsTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                this.switchSettingsTab(tabName);
+            });
+        });
+
+        // 添加分类按钮
+        const addCategoryBtn = document.getElementById('addCategoryBtn');
+        if (addCategoryBtn) {
+            addCategoryBtn.addEventListener('click', () => {
+                this.addCategory();
+            });
+        }
+
+        // 主题颜色选择
+        const themeColorOptions = document.querySelectorAll('.theme-color-option');
+        themeColorOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                const theme = option.dataset.theme;
+                this.changeTheme(theme);
+            });
+        });
+
+        // 字体大小选择
+        const fontSizeBtns = document.querySelectorAll('.font-size-btn');
+        fontSizeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const size = btn.dataset.size;
+                this.changeFontSize(size);
+            });
+        });
+
+        // 显示设置
+        const showArticleViews = document.getElementById('showArticleViews');
+        if (showArticleViews) {
+            showArticleViews.addEventListener('change', (e) => {
+                this.updateDisplaySetting('showViews', e.target.checked);
+            });
+        }
+
+        const showArticleDate = document.getElementById('showArticleDate');
+        if (showArticleDate) {
+            showArticleDate.addEventListener('change', (e) => {
+                this.updateDisplaySetting('showDate', e.target.checked);
+            });
+        }
+
+        const showArticleTags = document.getElementById('showArticleTags');
+        if (showArticleTags) {
+            showArticleTags.addEventListener('change', (e) => {
+                this.updateDisplaySetting('showTags', e.target.checked);
+            });
+        }
+
+        const articlesPerPageSelect = document.getElementById('articlesPerPageSelect');
+        if (articlesPerPageSelect) {
+            articlesPerPageSelect.addEventListener('change', (e) => {
+                this.articlesPerPage = parseInt(e.target.value);
+                this.currentPage = 1;
+                this.renderArticles();
+                this.saveSettings();
             });
         }
 
@@ -502,6 +615,9 @@ class KnowledgeBlog {
         // 使用Markdown渲染内容
         document.getElementById('detailBody').innerHTML = this.renderMarkdown(article.content);
 
+        // 生成并显示文章大纲
+        this.generateOutline();
+
         // 切换视图
         const detailView = document.getElementById('articleDetailView');
         const articlesContainer = document.getElementById('articlesContainer');
@@ -513,6 +629,70 @@ class KnowledgeBlog {
 
         // 滚动到顶部
         window.scrollTo(0, 0);
+    }
+
+    generateOutline() {
+        const detailBody = document.getElementById('detailBody');
+        const outlineContent = document.getElementById('outlineContent');
+        const outlineElement = document.getElementById('detailOutline');
+
+        // 查找所有标题元素
+        const headings = detailBody.querySelectorAll('h1, h2, h3, h4, h5, h6');
+
+        if (headings.length === 0) {
+            outlineElement.style.display = 'none';
+            return;
+        }
+
+        outlineElement.style.display = 'block';
+
+        // 生成大纲列表
+        let outlineHTML = '<ul class="outline-list">';
+
+        headings.forEach((heading, index) => {
+            const level = parseInt(heading.tagName.charAt(1));
+            const text = heading.textContent.trim();
+            const id = `heading-${index}`;
+
+            // 为标题添加ID，用于锚点跳转
+            heading.id = id;
+
+            // 根据标题级别添加缩进
+            const indent = (level - 1) * 16;
+
+            outlineHTML += `
+                <li class="outline-item outline-level-${level}" style="padding-left: ${indent}px;">
+                    <a href="#${id}" class="outline-link" data-heading-id="${id}">
+                        ${text}
+                    </a>
+                </li>
+            `;
+        });
+
+        outlineHTML += '</ul>';
+        outlineContent.innerHTML = outlineHTML;
+
+        // 添加点击事件，实现平滑滚动
+        const outlineLinks = outlineContent.querySelectorAll('.outline-link');
+        outlineLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const headingId = link.getAttribute('data-heading-id');
+                const headingElement = document.getElementById(headingId);
+
+                if (headingElement) {
+                    // 平滑滚动到标题位置
+                    headingElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+
+                    // 高亮当前选中的大纲项
+                    outlineLinks.forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                }
+            });
+        });
     }
 
     hideArticleDetail() {
@@ -619,6 +799,303 @@ class KnowledgeBlog {
             console.error('删除失败:', error);
             this.showNotification('删除失败', 'error');
         }
+    }
+
+    // 系统设置相关方法
+    openSettings() {
+        this.renderCategoryList();
+        this.loadSettings();
+        this.openModal('settingsModal');
+    }
+
+    switchSettingsTab(tabName) {
+        // 切换标签页
+        const tabs = document.querySelectorAll('.settings-tab');
+        const panels = document.querySelectorAll('.settings-panel');
+
+        tabs.forEach(tab => tab.classList.remove('active'));
+        panels.forEach(panel => panel.classList.remove('active'));
+
+        document.querySelector(`.settings-tab[data-tab="${tabName}"]`).classList.add('active');
+        document.getElementById(`${tabName}Panel`).classList.add('active');
+    }
+
+    changeTheme(theme) {
+        const themeColors = {
+            'default': { primary: '#3498db', accent: '#3498db', hover: '#2980b9' },
+            'green': { primary: '#27ae60', accent: '#27ae60', hover: '#229954' },
+            'purple': { primary: '#9b59b6', accent: '#9b59b6', hover: '#8e44ad' },
+            'orange': { primary: '#e67e22', accent: '#e67e22', hover: '#d35400' },
+            'red': { primary: '#e74c3c', accent: '#e74c3c', hover: '#c0392b' },
+            'dark': { primary: '#2c3e50', accent: '#3498db', hover: '#34495e' }
+        };
+
+        const colors = themeColors[theme];
+        if (colors) {
+            document.documentElement.style.setProperty('--primary-color', colors.primary);
+            document.documentElement.style.setProperty('--accent-color', colors.accent);
+            document.documentElement.style.setProperty('--accent-hover', colors.hover);
+
+            // 更新选中状态
+            document.querySelectorAll('.theme-color-option').forEach(opt => {
+                opt.classList.remove('active');
+            });
+            document.querySelector(`.theme-color-option[data-theme="${theme}"]`).classList.add('active');
+
+            this.currentTheme = theme;
+            this.saveSettings();
+            this.showNotification('主题已更换', 'success');
+        }
+    }
+
+    changeFontSize(size) {
+        const fontSizes = {
+            'small': '14px',
+            'medium': '16px',
+            'large': '18px'
+        };
+
+        if (fontSizes[size]) {
+            document.documentElement.style.setProperty('--base-font-size', fontSizes[size]);
+
+            // 更新选中状态
+            document.querySelectorAll('.font-size-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.font-size-btn[data-size="${size}"]`).classList.add('active');
+
+            this.currentFontSize = size;
+            this.saveSettings();
+            this.showNotification('字体大小已调整', 'success');
+        }
+    }
+
+    updateDisplaySetting(key, value) {
+        if (!this.displaySettings) {
+            this.displaySettings = {};
+        }
+        this.displaySettings[key] = value;
+        this.saveSettings();
+        this.renderArticles();
+    }
+
+    saveSettings() {
+        const settings = {
+            theme: this.currentTheme || 'default',
+            fontSize: this.currentFontSize || 'medium',
+            displaySettings: this.displaySettings || { showViews: true, showDate: true, showTags: true },
+            articlesPerPage: this.articlesPerPage,
+            categoryNames: this.categoryNames,
+            categoryIcons: this.categoryIcons
+        };
+        localStorage.setItem('knowledgeBlogSettings', JSON.stringify(settings));
+    }
+
+    loadSettings() {
+        const saved = localStorage.getItem('knowledgeBlogSettings');
+        if (saved) {
+            const settings = JSON.parse(saved);
+
+            // 应用主题
+            if (settings.theme) {
+                this.changeTheme(settings.theme);
+            }
+
+            // 应用字体大小
+            if (settings.fontSize) {
+                this.changeFontSize(settings.fontSize);
+            }
+
+            // 应用显示设置
+            if (settings.displaySettings) {
+                this.displaySettings = settings.displaySettings;
+                const showViews = document.getElementById('showArticleViews');
+                const showDate = document.getElementById('showArticleDate');
+                const showTags = document.getElementById('showArticleTags');
+
+                if (showViews) showViews.checked = settings.displaySettings.showViews;
+                if (showDate) showDate.checked = settings.displaySettings.showDate;
+                if (showTags) showTags.checked = settings.displaySettings.showTags;
+            }
+
+            // 应用每页文章数
+            if (settings.articlesPerPage) {
+                this.articlesPerPage = settings.articlesPerPage;
+                const select = document.getElementById('articlesPerPageSelect');
+                if (select) select.value = settings.articlesPerPage;
+            }
+
+            // 应用分类设置
+            if (settings.categoryNames) {
+                this.categoryNames = settings.categoryNames;
+            }
+            if (settings.categoryIcons) {
+                this.categoryIcons = settings.categoryIcons;
+            }
+        }
+    }
+
+    // 分类管理相关方法
+    openCategoryManager() {
+        this.renderCategoryList();
+        this.openModal('settingsModal');
+    }
+
+    renderCategoryList() {
+        const manageCategoryList = document.getElementById('manageCategoryList');
+        if (!manageCategoryList) return;
+
+        // 获取所有分类（排除"全部"）
+        const categories = Object.entries(this.categoryNames).filter(([key]) => key !== 'all');
+
+        let html = '';
+        categories.forEach(([key, name]) => {
+            const count = this.articles.filter(a => a.category === key).length;
+            html += `
+                <li class="manage-category-item">
+                    <div class="category-info">
+                        <i class="fas ${this.categoryIcons[key] || 'fa-folder'}"></i>
+                        <span class="category-name">${name}</span>
+                        <span class="category-key">(${key})</span>
+                        <span class="category-count">${count}篇文章</span>
+                    </div>
+                    <div class="category-actions">
+                        <button class="btn-edit-category" data-key="${key}" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn-delete-category" data-key="${key}" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </li>
+            `;
+        });
+
+        manageCategoryList.innerHTML = html;
+
+        // 绑定编辑和删除事件
+        manageCategoryList.querySelectorAll('.btn-edit-category').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const key = e.currentTarget.dataset.key;
+                this.editCategory(key);
+            });
+        });
+
+        manageCategoryList.querySelectorAll('.btn-delete-category').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const key = e.currentTarget.dataset.key;
+                this.deleteCategory(key);
+            });
+        });
+    }
+
+    addCategory() {
+        const nameInput = document.getElementById('newCategoryName');
+        const iconInput = document.getElementById('newCategoryIcon');
+        const keyInput = document.getElementById('newCategoryKey');
+
+        const name = nameInput.value.trim();
+        const icon = iconInput.value.trim() || 'fa-folder';
+        const key = keyInput.value.trim().toLowerCase();
+
+        if (!name || !key) {
+            this.showNotification('请填写分类名称和键名', 'error');
+            return;
+        }
+
+        // 检查键名是否已存在
+        if (this.categoryNames[key]) {
+            this.showNotification('该分类键名已存在', 'error');
+            return;
+        }
+
+        // 添加新分类
+        this.categoryNames[key] = name;
+        this.categoryIcons[key] = icon;
+
+        // 更新左侧分类列表
+        this.updateCategorySidebar();
+
+        // 清空输入框
+        nameInput.value = '';
+        iconInput.value = '';
+        keyInput.value = '';
+
+        // 重新渲染管理列表
+        this.renderCategoryList();
+
+        this.showNotification('分类添加成功', 'success');
+    }
+
+    editCategory(key) {
+        const currentName = this.categoryNames[key];
+        const currentIcon = this.categoryIcons[key] || 'fa-folder';
+
+        const newName = prompt('请输入新的分类名称:', currentName);
+        if (newName && newName.trim()) {
+            this.categoryNames[key] = newName.trim();
+            this.updateCategorySidebar();
+            this.renderCategoryList();
+            this.showNotification('分类更新成功', 'success');
+        }
+    }
+
+    deleteCategory(key) {
+        // 检查是否有文章使用该分类
+        const count = this.articles.filter(a => a.category === key).length;
+        if (count > 0) {
+            this.showNotification(`该分类下有${count}篇文章，无法删除`, 'error');
+            return;
+        }
+
+        if (confirm(`确定要删除分类"${this.categoryNames[key]}"吗？`)) {
+            delete this.categoryNames[key];
+            delete this.categoryIcons[key];
+            this.updateCategorySidebar();
+            this.renderCategoryList();
+            this.showNotification('分类删除成功', 'success');
+        }
+    }
+
+    updateCategorySidebar() {
+        const categoryList = document.querySelector('.category-list');
+        if (!categoryList) return;
+
+        // 保留"全部文章"项
+        let html = `
+            <li class="category-item ${this.currentCategory === 'all' ? 'active' : ''}" data-category="all">
+                <i class="fas fa-th-large"></i>
+                <span>全部文章</span>
+                <span class="count">${this.articles.length}</span>
+            </li>
+        `;
+
+        // 添加其他分类
+        Object.entries(this.categoryNames).forEach(([key, name]) => {
+            if (key === 'all') return;
+            const count = this.articles.filter(a => a.category === key).length;
+            html += `
+                <li class="category-item ${this.currentCategory === key ? 'active' : ''}" data-category="${key}">
+                    <i class="fas ${this.categoryIcons[key] || 'fa-folder'}"></i>
+                    <span>${name}</span>
+                    <span class="count">${count}</span>
+                </li>
+            `;
+        });
+
+        categoryList.innerHTML = html;
+
+        // 重新绑定分类切换事件
+        const categoryItems = categoryList.querySelectorAll('.category-item');
+        categoryItems.forEach(item => {
+            item.addEventListener('click', () => {
+                categoryItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                this.currentCategory = item.dataset.category;
+                this.currentPage = 1;
+                this.renderArticles();
+            });
+        });
     }
 
     showNotification(message, type = 'success') {

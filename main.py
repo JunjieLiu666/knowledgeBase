@@ -10,6 +10,8 @@ from docx.oxml.ns import qn
 import io
 import uuid
 import base64
+import fitz  # PyMuPDF
+import easyofd
 
 app = Flask(__name__)
 CORS(app)
@@ -187,9 +189,10 @@ def get_stats():
     })
 
 
-@app.route('/api/upload/word', methods=['POST'])
-def upload_word():
-    """上传并解析Word文件"""
+
+@app.route('/api/upload/file', methods=['POST'])
+def upload_file():
+    """上传并解析文件（支持Word、PDF、OFD格式）"""
     if 'file' not in request.files:
         return jsonify({'error': '没有上传文件'}), 400
 
@@ -197,111 +200,261 @@ def upload_word():
     if file.filename == '':
         return jsonify({'error': '没有选择文件'}), 400
 
-    if not file.filename.endswith(('.docx', '.doc')):
-        return jsonify({'error': '只支持 .docx 格式的文件'}), 400
+    # 获取文件扩展名
+    file_ext = os.path.splitext(file.filename)[1].lower()
+
+    # 支持的文件格式
+    supported_formats = {
+        '.docx': 'Word文档',
+        '.doc': 'Word文档',
+        '.pdf': 'PDF文档',
+        '.ofd': 'OFD文档'
+    }
+
+    if file_ext not in supported_formats:
+        return jsonify({'error': f'不支持的文件格式。支持的格式：{", ".join(supported_formats.keys())}'}), 400
 
     try:
-        # 确保上传目录存在
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
         # 读取文件内容
         file_content = file.read()
-        doc = Document(io.BytesIO(file_content))
 
-        # 提取标题（从第一个段落或文件名）
-        title = ''
-        content_parts = []
-        image_count = 0
+        # 根据文件类型选择解析方法
+        if file_ext in ['.docx', '.doc']:
+            result = parse_word(file_content, file.filename)
+        elif file_ext == '.pdf':
+            result = parse_pdf(file_content, file.filename)
+        elif file_ext == '.ofd':
+            result = parse_ofd(file_content, file.filename)
+        else:
+            return jsonify({'error': '不支持的文件格式'}), 400
 
-        # 处理文档中的所有元素（段落和图片）
-        for element in doc.element.body:
-            # 处理段落
-            if element.tag.endswith('p'):
-                # 找到对应的段落对象
-                para = None
-                for p in doc.paragraphs:
-                    if p._element == element:
-                        para = p
-                        break
-
-                if para is None:
-                    continue
-
-                # 检查段落中是否有图片
-                has_image = False
-                for run in para.runs:
-                    if run._element.xpath('.//a:blip'):
-                        has_image = True
-                        # 提取图片
-                        for blip in run._element.xpath('.//a:blip'):
-                            embed = blip.get(qn('r:embed'))
-                            if embed:
-                                # 获取图片数据
-                                image_part = doc.part.related_parts[embed]
-                                image_data = image_part.blob
-
-                                # 生成唯一文件名
-                                image_ext = os.path.splitext(image_part.filename)[1] if image_part.filename else '.png'
-                                image_name = f"{uuid.uuid4().hex}{image_ext}"
-                                image_path = os.path.join(UPLOAD_FOLDER, image_name)
-
-                                # 保存图片
-                                with open(image_path, 'wb') as f:
-                                    f.write(image_data)
-
-                                # 添加Markdown图片引用
-                                image_url = f"/static/uploads/images/{image_name}"
-                                content_parts.append(f"![图片{image_count + 1}]({image_url})")
-                                image_count += 1
-
-                # 处理文本内容
-                text = para.text.strip()
-                if text:
-                    # 第一个非空段落作为标题
-                    if not title and len(content_parts) == 0:
-                        # 检查是否是标题样式
-                        if para.style.name.startswith('Heading'):
-                            title = text
-                        else:
-                            # 如果第一段较短，可能是标题
-                            if len(text) < 100:
-                                title = text
-                            else:
-                                # 根据段落样式转换为Markdown格式
-                                content_parts.append(convert_paragraph_to_markdown(para, text))
-                    else:
-                        # 根据段落样式转换为Markdown格式
-                        content_parts.append(convert_paragraph_to_markdown(para, text))
-
-            # 处理表格
-            elif element.tag.endswith('tbl'):
-                for table in doc.tables:
-                    if table._element == element:
-                        table_md = []
-                        for i, row in enumerate(table.rows):
-                            cells = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
-                            table_md.append('| ' + ' | '.join(cells) + ' |')
-                            if i == 0:
-                                # 添加表头分隔线
-                                table_md.append('| ' + ' | '.join(['---'] * len(cells)) + ' |')
-                        content_parts.append('\n'.join(table_md))
-                        break
-
-        # 如果没有提取到标题，使用文件名
-        if not title:
-            title = os.path.splitext(file.filename)[0]
-
-        content = '\n\n'.join(content_parts)
-
-        return jsonify({
-            'title': title,
-            'content': content
-        })
+        return jsonify(result)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f'解析文件失败: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
+
+
+def parse_word(file_content, filename):
+    """解析Word文件"""
+    # 确保上传目录存在
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+    doc = Document(io.BytesIO(file_content))
+
+    # 提取标题（从第一个段落或文件名）
+    title = ''
+    content_parts = []
+    image_count = 0
+
+    # 处理文档中的所有元素（段落和图片）
+    for element in doc.element.body:
+        # 处理段落
+        if element.tag.endswith('p'):
+            # 找到对应的段落对象
+            para = None
+            for p in doc.paragraphs:
+                if p._element == element:
+                    para = p
+                    break
+
+            if para is None:
+                continue
+
+            # 检查段落中是否有图片
+            has_image = False
+            for run in para.runs:
+                if run._element.xpath('.//a:blip'):
+                    has_image = True
+                    # 提取图片
+                    for blip in run._element.xpath('.//a:blip'):
+                        embed = blip.get(qn('r:embed'))
+                        if embed:
+                            # 获取图片数据
+                            image_part = doc.part.related_parts[embed]
+                            image_data = image_part.blob
+
+                            # 生成唯一文件名
+                            image_ext = os.path.splitext(image_part.filename)[1] if image_part.filename else '.png'
+                            image_name = f"{uuid.uuid4().hex}{image_ext}"
+                            image_path = os.path.join(UPLOAD_FOLDER, image_name)
+
+                            # 保存图片
+                            with open(image_path, 'wb') as f:
+                                f.write(image_data)
+
+                            # 添加Markdown图片引用
+                            image_url = f"/static/uploads/images/{image_name}"
+                            content_parts.append(f"![图片{image_count + 1}]({image_url})")
+                            image_count += 1
+
+            # 处理文本内容
+            text = para.text.strip()
+            if text:
+                # 第一个非空段落作为标题
+                if not title and len(content_parts) == 0:
+                    # 检查是否是标题样式
+                    if para.style.name.startswith('Heading'):
+                        title = text
+                    else:
+                        # 如果第一段较短，可能是标题
+                        if len(text) < 100:
+                            title = text
+                        else:
+                            # 根据段落样式转换为Markdown格式
+                            content_parts.append(convert_paragraph_to_markdown(para, text))
+                else:
+                    # 根据段落样式转换为Markdown格式
+                    content_parts.append(convert_paragraph_to_markdown(para, text))
+
+        # 处理表格
+        elif element.tag.endswith('tbl'):
+            for table in doc.tables:
+                if table._element == element:
+                    table_md = []
+                    for i, row in enumerate(table.rows):
+                        cells = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+                        table_md.append('| ' + ' | '.join(cells) + ' |')
+                        if i == 0:
+                            # 添加表头分隔线
+                            table_md.append('| ' + ' | '.join(['---'] * len(cells)) + ' |')
+                    content_parts.append('\n'.join(table_md))
+                    break
+
+    # 如果没有提取到标题，使用文件名
+    if not title:
+        title = os.path.splitext(filename)[0]
+
+    content = '\n\n'.join(content_parts)
+
+    return {
+        'title': title,
+        'content': content
+    }
+
+
+def parse_pdf(file_content, filename):
+    """解析PDF文件，转换为图片展示"""
+    try:
+        # 确保上传目录存在
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+        # 打开PDF文件
+        pdf_document = fitz.open(stream=file_content, filetype="pdf")
+
+        title = os.path.splitext(filename)[0]
+        content_parts = []
+
+        # 处理每一页，转换为图片
+        for page_num in range(len(pdf_document)):
+            page = pdf_document[page_num]
+
+            # 添加页面分隔
+            if page_num > 0:
+                content_parts.append(f"\n---\n")
+
+            # 将页面转换为高质量图片
+            zoom = 2  # 缩放因子，提高清晰度
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+
+            # 生成图片文件名
+            page_image_name = f"{uuid.uuid4().hex}_page_{page_num + 1}.png"
+            page_image_path = os.path.join(UPLOAD_FOLDER, page_image_name)
+
+            # 保存页面图片
+            pix.save(page_image_path)
+
+            # 添加页面图片引用
+            page_image_url = f"/static/uploads/images/{page_image_name}"
+            content_parts.append(f"![第{page_num + 1}页]({page_image_url})")
+
+        pdf_document.close()
+        content = '\n\n'.join(content_parts)
+
+        return {
+            'title': title,
+            'content': content
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise Exception(f'解析PDF文件失败: {str(e)}')
+
+
+def parse_ofd(file_content, filename):
+    """解析OFD文件，转换为图片展示"""
+    try:
+        # 确保上传目录存在
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+        # 将文件内容保存为临时文件
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ofd') as temp_file:
+            temp_file.write(file_content)
+            temp_path = temp_file.name
+
+        try:
+            # 使用easyofd将OFD转换为PDF
+            ofd = easyofd.OFD()
+            ofd.read(temp_path)
+
+            # 转换为PDF（临时）
+            pdf_path = temp_path.replace('.ofd', '.pdf')
+            ofd.to_pdf(pdf_path)
+
+            # 使用PyMuPDF读取PDF并转换为图片
+            pdf_doc = fitz.open(pdf_path)
+
+            title = os.path.splitext(filename)[0]
+            content_parts = []
+
+            # 处理每一页，转换为图片
+            for page_num in range(len(pdf_doc)):
+                page = pdf_doc[page_num]
+
+                # 添加页面分隔
+                if page_num > 0:
+                    content_parts.append(f"\n---\n")
+
+                # 将页面转换为高质量图片
+                zoom = 2  # 缩放因子，提高清晰度
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
+
+                # 生成图片文件名
+                page_image_name = f"{uuid.uuid4().hex}_page_{page_num + 1}.png"
+                page_image_path = os.path.join(UPLOAD_FOLDER, page_image_name)
+
+                # 保存页面图片
+                pix.save(page_image_path)
+
+                # 添加页面图片引用
+                page_image_url = f"/static/uploads/images/{page_image_name}"
+                content_parts.append(f"![第{page_num + 1}页]({page_image_url})")
+
+            pdf_doc.close()
+            content = '\n\n'.join(content_parts)
+
+            return {
+                'title': title,
+                'content': content
+            }
+
+        finally:
+            # 删除临时文件
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            pdf_path = temp_path.replace('.ofd', '.pdf')
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise Exception(f'解析OFD文件失败: {str(e)}')
 
 
 def convert_paragraph_to_markdown(para, text):
@@ -327,5 +480,5 @@ def convert_paragraph_to_markdown(para, text):
 
 
 if __name__ == '__main__':
-    init_db()
+    # init_db()
     app.run(debug=True, port=5000)

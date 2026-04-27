@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Markdown渲染库 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/js/libs/marked.min.js"></script>
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -25,7 +25,7 @@
                 <button class="btn-icon" id="addDocBtn" title="写文章">
                     <i class="fas fa-pen-fancy"></i>
                 </button>
-                <button class="btn-icon" title="设置">
+                <button class="btn-icon" id="settingsBtn" title="设置">
                     <i class="fas fa-cog"></i>
                 </button>
             </div>
@@ -91,18 +91,155 @@
                         <button class="btn-action" id="deleteDetailArticle" title="删除"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
-                <article class="detail-content">
-                    <div class="detail-meta">
-                        <span class="category-badge" id="detailCategory"></span>
-                        <span class="detail-date"><i class="fas fa-calendar-alt"></i> <span id="detailDate"></span></span>
-                        <span class="detail-views"><i class="fas fa-eye"></i> <span id="detailViews"></span></span>
-                    </div>
-                    <h1 class="detail-title" id="detailTitle"></h1>
-                    <div class="detail-tags" id="detailTags"></div>
-                    <div class="detail-body" id="detailBody"></div>
-                </article>
+                <div class="detail-container">
+                    <article class="detail-content">
+                        <div class="detail-meta">
+                            <span class="category-badge" id="detailCategory"></span>
+                            <span class="detail-date"><i class="fas fa-calendar-alt"></i> <span id="detailDate"></span></span>
+                            <span class="detail-views"><i class="fas fa-eye"></i> <span id="detailViews"></span></span>
+                        </div>
+                        <h1 class="detail-title" id="detailTitle"></h1>
+                        <div class="detail-tags" id="detailTags"></div>
+                        <div class="detail-body" id="detailBody"></div>
+                    </article>
+                    <aside class="detail-outline" id="detailOutline">
+                        <div class="outline-header">
+                            <i class="fas fa-list-ul"></i> 文章大纲
+                        </div>
+                        <nav class="outline-content" id="outlineContent"></nav>
+                    </aside>
+                </div>
             </div>
         </main>
+    </div>
+
+    <!-- 系统设置模态框 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2><i class="fas fa-cog"></i> 系统设置</h2>
+                <button class="modal-close" id="closeSettingsModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-container">
+                    <!-- 设置标签页 -->
+                    <div class="settings-tabs">
+                        <button class="settings-tab active" data-tab="category">
+                            <i class="fas fa-folder"></i> 分类管理
+                        </button>
+                        <button class="settings-tab" data-tab="theme">
+                            <i class="fas fa-palette"></i> 主题设置
+                        </button>
+                        <button class="settings-tab" data-tab="display">
+                            <i class="fas fa-desktop"></i> 显示设置
+                        </button>
+                    </div>
+
+                    <!-- 设置内容区 -->
+                    <div class="settings-content">
+                        <!-- 分类管理 -->
+                        <div class="settings-panel active" id="categoryPanel">
+                            <div class="category-manager">
+                                <div class="existing-categories">
+                                    <h3>现有分类</h3>
+                                    <ul class="manage-category-list" id="manageCategoryList">
+                                        <!-- 由JS动态渲染 -->
+                                    </ul>
+                                </div>
+                                <div class="add-category-form">
+                                    <h3>添加新分类</h3>
+                                    <div class="form-group">
+                                        <input type="text" id="newCategoryName" placeholder="分类名称">
+                                    </div>
+                                    <div class="form-group">
+                                        <input type="text" id="newCategoryIcon" placeholder="图标类名（如：fa-code）">
+                                    </div>
+                                    <div class="form-group">
+                                        <input type="text" id="newCategoryKey" placeholder="分类键名（英文，如：tech）">
+                                    </div>
+                                    <button class="btn-primary" id="addCategoryBtn">
+                                        <i class="fas fa-plus"></i> 添加分类
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 主题设置 -->
+                        <div class="settings-panel" id="themePanel">
+                            <div class="theme-settings">
+                                <h3>主题颜色</h3>
+                                <div class="theme-colors">
+                                    <div class="theme-color-option" data-theme="default">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #3498db, #2980b9);"></div>
+                                        <span>默认蓝</span>
+                                    </div>
+                                    <div class="theme-color-option" data-theme="green">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #27ae60, #229954);"></div>
+                                        <span>清新绿</span>
+                                    </div>
+                                    <div class="theme-color-option" data-theme="purple">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #9b59b6, #8e44ad);"></div>
+                                        <span>优雅紫</span>
+                                    </div>
+                                    <div class="theme-color-option" data-theme="orange">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #e67e22, #d35400);"></div>
+                                        <span>活力橙</span>
+                                    </div>
+                                    <div class="theme-color-option" data-theme="red">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #e74c3c, #c0392b);"></div>
+                                        <span>热情红</span>
+                                    </div>
+                                    <div class="theme-color-option" data-theme="dark">
+                                        <div class="color-preview" style="background: linear-gradient(135deg, #2c3e50, #1a252f);"></div>
+                                        <span>暗黑风</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 显示设置 -->
+                        <div class="settings-panel" id="displayPanel">
+                            <div class="display-settings">
+                                <h3>字体大小</h3>
+                                <div class="font-size-control">
+                                    <button class="font-size-btn" data-size="small">小</button>
+                                    <button class="font-size-btn active" data-size="medium">中</button>
+                                    <button class="font-size-btn" data-size="large">大</button>
+                                </div>
+
+                                <h3>文章列表显示</h3>
+                                <div class="display-options">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="showArticleViews" checked>
+                                        <span>显示阅读量</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="showArticleDate" checked>
+                                        <span>显示发布日期</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="showArticleTags" checked>
+                                        <span>显示标签</span>
+                                    </label>
+                                </div>
+
+                                <h3>每页文章数</h3>
+                                <div class="articles-per-page">
+                                    <select id="articlesPerPageSelect">
+                                        <option value="4">4篇</option>
+                                        <option value="6" selected>6篇</option>
+                                        <option value="8">8篇</option>
+                                        <option value="12">12篇</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 新建/编辑文章模态框 -->
@@ -118,15 +255,15 @@
                         <label for="docTitle">文章标题</label>
                         <input type="text" id="docTitle" required placeholder="请输入文章标题">
                     </div>
-                    <!-- Word文件上传 -->
+                    <!-- 文件上传 -->
                     <div class="form-group">
-                        <label>从Word文件导入</label>
+                        <label>从文件导入</label>
                         <div class="file-upload-area">
-                            <input type="file" id="wordFileInput" accept=".docx,.doc" style="display: none;">
-                            <button type="button" class="btn-upload" id="uploadWordBtn">
-                                <i class="fas fa-file-word"></i> 选择Word文件
+                            <input type="file" id="fileInput" accept=".docx,.doc,.pdf,.ofd" style="display: none;">
+                            <button type="button" class="btn-upload" id="uploadFileBtn">
+                                <i class="fas fa-file-upload"></i> 选择文件
                             </button>
-                            <span class="file-name" id="wordFileName">支持 .docx 格式</span>
+                            <span class="file-name" id="fileName">支持 Word、PDF、OFD 格式</span>
                         </div>
                     </div>
                     <div class="form-row">
