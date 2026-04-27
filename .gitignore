@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Database
+*.db
+*.db-journal
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# CodeArts
+.codeartsdoer/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Uploads (user-generated content)
+static/uploads/
+
+# Logs
+*.log
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+*.egg
