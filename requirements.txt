@@ -1,3 +1,5 @@
 flask>=2.0.0
 flask-cors>=3.0.0
 python-docx>=0.8.11
+PyMuPDF>=1.23.0
+easyofd>=0.1.0

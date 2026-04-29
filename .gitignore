@@ -36,6 +36,9 @@ Desktop.ini
 # Uploads (user-generated content)
 static/uploads/
 
+# Test files
+*.ofd
+
 # Logs
 *.log
 

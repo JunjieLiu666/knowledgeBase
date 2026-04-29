@@ -1,25 +1,33 @@
 # 知识库后端服务
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, session
 from flask_cors import CORS
 import sqlite3
 import os
+import hashlib
+import secrets
 from datetime import datetime
+from functools import wraps
 from docx import Document
 from docx.shared import Inches
 from docx.oxml.ns import qn
 import io
 import uuid
 import base64
+import zipfile
+import xml.etree.ElementTree as ET
 import fitz  # PyMuPDF
 import easyofd
 
 app = Flask(__name__)
-CORS(app)
+app.secret_key = secrets.token_hex(32)
+CORS(app, supports_credentials=True)
 
 # 数据库路径
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'knowledge.db')
 # 图片存储路径
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'images')
+# 附件存储路径
+ATTACHMENT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'attachments')
 
 
 def get_db():
@@ -34,6 +42,30 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
 
+    # 创建用户表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin',
+            created_at TEXT NOT NULL
+        )
+    ''')
+
+    # 创建附件表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+        )
+    ''')
+
     # 创建文章表
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS articles (
@@ -47,6 +79,16 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     ''')
+
+    # 创建默认管理员账号 (admin / admin123)
+    cursor.execute('SELECT COUNT(*) FROM users')
+    if cursor.fetchone()[0] == 0:
+        default_password = 'admin123'
+        password_hash = hashlib.sha256(default_password.encode()).hexdigest()
+        cursor.execute('''
+            INSERT INTO users (username, password_hash, role, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', ('admin', password_hash, 'admin', datetime.now().strftime('%Y-%m-%d')))
 
     # 检查是否有数据，没有则插入示例数据
     cursor.execute('SELECT COUNT(*) FROM articles')
@@ -72,6 +114,72 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def login_required(f):
+    """管理员权限验证装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': '请先登录'}), 401
+        if session.get('role') != 'admin':
+            return jsonify({'error': '需要管理员权限'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """管理员登录"""
+    data = request.get_json()
+    username = data.get('username', '')
+    password = data.get('password', '')
+
+    if not username or not password:
+        return jsonify({'error': '请输入用户名和密码'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({'error': '用户名或密码错误'}), 401
+
+    if user['password_hash'] != hash_password(password):
+        return jsonify({'error': '用户名或密码错误'}), 401
+
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+
+    return jsonify({
+        'message': '登录成功',
+        'user': {'id': user['id'], 'username': user['username'], 'role': user['role']}
+    })
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """退出登录"""
+    session.clear()
+    return jsonify({'message': '已退出登录'})
+
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    """检查登录状态"""
+    if 'user_id' in session:
+        return jsonify({
+            'logged_in': True,
+            'user': {'id': session['user_id'], 'username': session['username'], 'role': session['role']}
+        })
+    return jsonify({'logged_in': False})
 
 
 @app.route('/')
@@ -107,6 +215,7 @@ def get_article(article_id):
 
 
 @app.route('/api/articles', methods=['POST'])
+@login_required
 def create_article():
     """创建文章"""
     data = request.get_json()
@@ -126,6 +235,7 @@ def create_article():
 
 
 @app.route('/api/articles/<int:article_id>', methods=['PUT'])
+@login_required
 def update_article(article_id):
     """更新文章"""
     data = request.get_json()
@@ -144,6 +254,7 @@ def update_article(article_id):
 
 
 @app.route('/api/articles/<int:article_id>', methods=['DELETE'])
+@login_required
 def delete_article(article_id):
     """删除文章"""
     conn = get_db()
@@ -191,6 +302,7 @@ def get_stats():
 
 
 @app.route('/api/upload/file', methods=['POST'])
+@login_required
 def upload_file():
     """上传并解析文件（支持Word、PDF、OFD格式）"""
     if 'file' not in request.files:
@@ -206,7 +318,6 @@ def upload_file():
     # 支持的文件格式
     supported_formats = {
         '.docx': 'Word文档',
-        '.doc': 'Word文档',
         '.pdf': 'PDF文档',
         '.ofd': 'OFD文档'
     }
@@ -219,7 +330,7 @@ def upload_file():
         file_content = file.read()
 
         # 根据文件类型选择解析方法
-        if file_ext in ['.docx', '.doc']:
+        if file_ext == '.docx':
             result = parse_word(file_content, file.filename)
         elif file_ext == '.pdf':
             result = parse_pdf(file_content, file.filename)
@@ -385,75 +496,85 @@ def parse_pdf(file_content, filename):
 
 
 def parse_ofd(file_content, filename):
-    """解析OFD文件，转换为图片展示"""
-    try:
-        # 确保上传目录存在
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    """解析OFD文件，渲染为图片展示（保留原始排版）"""
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-        # 将文件内容保存为临时文件
+    title = os.path.splitext(filename)[0]
+    content_parts = []
+
+    def render_images(image_paths, prefix=''):
+        """将提取的图片写入 uploads 并生成 Markdown"""
+        parts = []
+        for i, (img_data, ext) in enumerate(image_paths):
+            img_name = f'{uuid.uuid4().hex}{ext or ".png"}'
+            img_path = os.path.join(UPLOAD_FOLDER, img_name)
+            with open(img_path, 'wb') as f:
+                f.write(img_data)
+            parts.append(f'![{prefix}{i + 1}](/static/uploads/images/{img_name})')
+        return parts
+
+    # ---- 方案一：easyofd 转 PDF，再逐页渲染为图片 ----
+    try:
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ofd') as temp_file:
             temp_file.write(file_content)
             temp_path = temp_file.name
 
         try:
-            # 使用easyofd将OFD转换为PDF
             ofd = easyofd.OFD()
-            ofd.read(temp_path)
-
-            # 转换为PDF（临时）
+            ofd.read(temp_path, fmt="path")
             pdf_path = temp_path.replace('.ofd', '.pdf')
             ofd.to_pdf(pdf_path)
 
-            # 使用PyMuPDF读取PDF并转换为图片
             pdf_doc = fitz.open(pdf_path)
-
-            title = os.path.splitext(filename)[0]
-            content_parts = []
-
-            # 处理每一页，转换为图片
+            zoom = 2
+            mat = fitz.Matrix(zoom, zoom)
             for page_num in range(len(pdf_doc)):
-                page = pdf_doc[page_num]
-
-                # 添加页面分隔
                 if page_num > 0:
-                    content_parts.append(f"\n---\n")
-
-                # 将页面转换为高质量图片
-                zoom = 2  # 缩放因子，提高清晰度
-                mat = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=mat)
-
-                # 生成图片文件名
-                page_image_name = f"{uuid.uuid4().hex}_page_{page_num + 1}.png"
-                page_image_path = os.path.join(UPLOAD_FOLDER, page_image_name)
-
-                # 保存页面图片
-                pix.save(page_image_path)
-
-                # 添加页面图片引用
-                page_image_url = f"/static/uploads/images/{page_image_name}"
-                content_parts.append(f"![第{page_num + 1}页]({page_image_url})")
+                    content_parts.append('\n---\n')
+                pix = pdf_doc[page_num].get_pixmap(matrix=mat)
+                page_img_name = f'{uuid.uuid4().hex}_page_{page_num + 1}.png'
+                page_img_path = os.path.join(UPLOAD_FOLDER, page_img_name)
+                pix.save(page_img_path)
+                content_parts.append(f'![第{page_num + 1}页](/static/uploads/images/{page_img_name})')
 
             pdf_doc.close()
-            content = '\n\n'.join(content_parts)
 
-            return {
-                'title': title,
-                'content': content
-            }
+            if content_parts:
+                return {'title': title, 'content': '\n\n'.join(content_parts)}
 
         finally:
-            # 删除临时文件
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             pdf_path = temp_path.replace('.ofd', '.pdf')
             if os.path.exists(pdf_path):
                 os.remove(pdf_path)
 
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc()
+
+    # ---- 方案二：直接从 OFD (ZIP) 中提取所有图片 ----
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
+            # 收集所有图片文件
+            image_files = []
+            for name in sorted(zf.namelist()):
+                lower = name.lower()
+                if lower.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff', '.tif')):
+                    img_data = zf.read(name)
+                    ext = os.path.splitext(name)[1]
+                    image_files.append((img_data, ext))
+
+            if image_files:
+                parts = render_images(image_files, prefix='图片')
+                return {'title': title, 'content': '\n\n'.join(parts)}
+
+            # 没有图片文件，尝试将整个 OFD 作为 PDF 渲染
+            # 如果 PDF 渲染也没成功，说明此 OFD 无可视化内容
+            raise Exception('OFD文件中未找到可渲染的图片内容')
+
+    except Exception as e:
         raise Exception(f'解析OFD文件失败: {str(e)}')
 
 
@@ -479,6 +600,104 @@ def convert_paragraph_to_markdown(para, text):
         return text
 
 
+# ---- 附件管理 API ----
+
+@app.route('/api/articles/<int:article_id>/attachments', methods=['GET'])
+def get_attachments(article_id):
+    """获取文章的附件列表"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM attachments WHERE article_id = ? ORDER BY created_at DESC', (article_id,))
+    attachments = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(a) for a in attachments])
+
+
+@app.route('/api/articles/<int:article_id>/attachments', methods=['POST'])
+@login_required
+def upload_attachment(article_id):
+    """上传附件"""
+    if 'file' not in request.files:
+        return jsonify({'error': '没有上传文件'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '没有选择文件'}), 400
+
+    os.makedirs(ATTACHMENT_FOLDER, exist_ok=True)
+
+    original_filename = file.filename
+    file_ext = os.path.splitext(original_filename)[1]
+    stored_filename = f"{uuid.uuid4().hex}{file_ext}"
+    file_path = os.path.join(ATTACHMENT_FOLDER, stored_filename)
+
+    file.save(file_path)
+    file_size = os.path.getsize(file_path)
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO attachments (article_id, filename, original_filename, file_size, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (article_id, stored_filename, original_filename, file_size, now))
+    attachment_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'id': attachment_id,
+        'original_filename': original_filename,
+        'file_size': file_size,
+        'message': '上传成功'
+    }), 201
+
+
+@app.route('/api/attachments/<int:attachment_id>/download', methods=['GET'])
+def download_attachment(attachment_id):
+    """下载附件"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,))
+    attachment = cursor.fetchone()
+    conn.close()
+
+    if not attachment:
+        return jsonify({'error': '附件不存在'}), 404
+
+    return send_from_directory(
+        ATTACHMENT_FOLDER,
+        attachment['filename'],
+        as_attachment=True,
+        download_name=attachment['original_filename']
+    )
+
+
+@app.route('/api/attachments/<int:attachment_id>', methods=['DELETE'])
+@login_required
+def delete_attachment(attachment_id):
+    """删除附件"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,))
+    attachment = cursor.fetchone()
+
+    if not attachment:
+        conn.close()
+        return jsonify({'error': '附件不存在'}), 404
+
+    # 删除文件
+    file_path = os.path.join(ATTACHMENT_FOLDER, attachment['filename'])
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    cursor.execute('DELETE FROM attachments WHERE id = ?', (attachment_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': '删除成功'})
+
+
 if __name__ == '__main__':
-    # init_db()
+    init_db()
     app.run(debug=True, port=5000)

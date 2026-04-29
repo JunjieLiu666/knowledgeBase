@@ -8,6 +8,9 @@ class KnowledgeBlog {
         this.articlesPerPage = 6;
         this.currentCategory = 'all';
         this.searchQuery = '';
+        this.isLoggedIn = false;
+        this.currentUser = null;
+        this.displaySettings = { showViews: true, showDate: true, showTags: true };
 
         // 分类名称映射
         this.categoryNames = {
@@ -30,7 +33,9 @@ class KnowledgeBlog {
     }
 
     async init() {
+        this.loadSettings();
         await this.loadArticles();
+        await this.checkAuthStatus();
         this.bindEvents();
         this.renderArticles();
         this.updateStats();
@@ -145,27 +150,34 @@ class KnowledgeBlog {
             'idea': '灵感想法'
         };
 
-        const tags = article.tags ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+        const showViews = this.displaySettings.showViews !== false;
+        const showDate = this.displaySettings.showDate !== false;
+        const showTags = this.displaySettings.showTags !== false;
 
-        // 获取摘要（前200个字符）
+        const tags = (showTags && article.tags) ? article.tags.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('') : '';
+        const tagsHTML = showTags ? `<div class="article-tags">${tags}</div>` : '';
+
         const plainText = article.content.replace(/[#*`>\-\[\]]/g, '').replace(/\n/g, ' ');
         const summary = plainText.length > 200 ? plainText.substring(0, 200) + '...' : plainText;
+
+        const adminActions = this.isLoggedIn ? `
+            <div class="article-actions">
+                <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
+                <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
+            </div>` : '';
 
         return `
             <article class="article-card" data-id="${article.id}">
                 <div class="article-header">
                     <div class="article-meta">
                         <span class="category-badge ${article.category}">${categoryNames[article.category] || article.category}</span>
-                        <span class="article-date"><i class="fas fa-calendar-alt"></i> ${article.created_at}</span>
-                        <span class="article-views"><i class="fas fa-eye"></i> ${article.views}</span>
+                        ${showDate ? `<span class="article-date"><i class="fas fa-calendar-alt"></i> ${article.created_at}</span>` : ''}
+                        ${showViews ? `<span class="article-views"><i class="fas fa-eye"></i> ${article.views}</span>` : ''}
                     </div>
-                    <div class="article-actions">
-                        <button class="btn-action" title="编辑"><i class="fas fa-edit"></i></button>
-                        <button class="btn-action" title="删除"><i class="fas fa-trash"></i></button>
-                    </div>
+                    ${adminActions}
                 </div>
                 <h2 class="article-title clickable-title">${article.title}</h2>
-                <div class="article-tags">${tags}</div>
+                ${tagsHTML}
                 <div class="article-summary">${summary}</div>
                 <div class="article-footer">
                     <button class="btn-read-more">阅读全文 <i class="fas fa-arrow-right"></i></button>
@@ -339,6 +351,92 @@ class KnowledgeBlog {
         event.target.value = '';
     }
 
+    async checkAuthStatus() {
+        try {
+            const response = await fetch(`${this.apiBase}/auth/status`);
+            const data = await response.json();
+            this.isLoggedIn = data.logged_in;
+            this.currentUser = data.user || null;
+            this.updateAuthUI();
+        } catch (error) {
+            console.error('检查登录状态失败:', error);
+        }
+    }
+
+    updateAuthUI() {
+        const addDocBtn = document.getElementById('addDocBtn');
+        const loginBtn = document.getElementById('loginBtn');
+        const userInfo = document.getElementById('userInfo');
+
+        if (this.isLoggedIn) {
+            if (addDocBtn) addDocBtn.style.display = '';
+            if (loginBtn) loginBtn.style.display = 'none';
+            if (userInfo) userInfo.style.display = '';
+        } else {
+            if (addDocBtn) addDocBtn.style.display = 'none';
+            if (loginBtn) loginBtn.style.display = '';
+            if (userInfo) userInfo.style.display = 'none';
+        }
+    }
+
+    openLoginModal() {
+        document.getElementById('loginUsername').value = '';
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('loginError').style.display = 'none';
+        this.openModal('loginModal');
+    }
+
+    async login() {
+        const username = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+        const errorEl = document.getElementById('loginError');
+
+        if (!username || !password) {
+            errorEl.textContent = '请输入用户名和密码';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.isLoggedIn = true;
+                this.currentUser = data.user;
+                this.updateAuthUI();
+                this.closeModal('loginModal');
+                this.renderArticles();
+                this.showNotification('登录成功', 'success');
+            } else {
+                errorEl.textContent = data.error || '登录失败';
+                errorEl.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('登录失败:', error);
+            errorEl.textContent = '网络错误，请重试';
+            errorEl.style.display = 'block';
+        }
+    }
+
+    async logout() {
+        try {
+            await fetch(`${this.apiBase}/auth/logout`, { method: 'POST' });
+        } catch (error) {
+            console.error('退出登录失败:', error);
+        }
+        this.isLoggedIn = false;
+        this.currentUser = null;
+        this.updateAuthUI();
+        this.renderArticles();
+        this.showNotification('已退出登录', 'success');
+    }
+
     bindEvents() {
         // 编辑器工具栏
         this.bindToolbarEvents();
@@ -352,6 +450,23 @@ class KnowledgeBlog {
             });
             fileInput.addEventListener('change', (e) => {
                 this.handleFileUpload(e);
+            });
+        }
+
+        // 附件上传
+        const uploadAttachmentBtn = document.getElementById('uploadAttachmentBtn');
+        const attachmentFileInput = document.getElementById('attachmentFileInput');
+        if (uploadAttachmentBtn && attachmentFileInput) {
+            uploadAttachmentBtn.addEventListener('click', () => {
+                attachmentFileInput.click();
+            });
+            attachmentFileInput.addEventListener('change', () => {
+                const file = attachmentFileInput.files[0];
+                if (file) {
+                    document.getElementById('attachmentFileName').textContent = file.name;
+                    document.getElementById('attachmentFileName').style.color = '#27ae60';
+                    this.uploadAttachment();
+                }
             });
         }
 
@@ -373,7 +488,7 @@ class KnowledgeBlog {
                 item.classList.add('active');
                 this.currentCategory = item.dataset.category;
                 this.currentPage = 1;
-                this.renderArticles();
+                this.hideArticleDetail();
             });
         });
 
@@ -390,6 +505,59 @@ class KnowledgeBlog {
         if (settingsBtn) {
             settingsBtn.addEventListener('click', () => {
                 this.openSettings();
+            });
+        }
+
+        // 登录按钮
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', () => {
+                this.openLoginModal();
+            });
+        }
+
+        // 退出登录按钮
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                if (confirm('确定要退出登录吗？')) {
+                    this.logout();
+                }
+            });
+        }
+
+        // 登录模态框关闭
+        const closeLoginModal = document.getElementById('closeLoginModal');
+        if (closeLoginModal) {
+            closeLoginModal.addEventListener('click', () => {
+                this.closeModal('loginModal');
+            });
+        }
+
+        // 取消登录
+        const cancelLoginBtn = document.getElementById('cancelLoginBtn');
+        if (cancelLoginBtn) {
+            cancelLoginBtn.addEventListener('click', () => {
+                this.closeModal('loginModal');
+            });
+        }
+
+        // 提交登录
+        const submitLoginBtn = document.getElementById('submitLoginBtn');
+        if (submitLoginBtn) {
+            submitLoginBtn.addEventListener('click', () => {
+                this.login();
+            });
+        }
+
+        // 登录表单回车提交
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.login();
+                }
             });
         }
 
@@ -586,6 +754,12 @@ class KnowledgeBlog {
         const article = this.articles.find(a => a.id === articleId);
         if (!article) return;
 
+        // 根据登录状态显示/隐藏操作按钮
+        const detailActions = document.querySelector('.detail-actions');
+        if (detailActions) {
+            detailActions.style.display = this.isLoggedIn ? 'flex' : 'none';
+        }
+
         // 增加阅读量
         try {
             await fetch(`${this.apiBase}/articles/${articleId}/view`, { method: 'POST' });
@@ -614,6 +788,9 @@ class KnowledgeBlog {
         document.getElementById('detailTags').innerHTML = tags;
         // 使用Markdown渲染内容
         document.getElementById('detailBody').innerHTML = this.renderMarkdown(article.content);
+
+        // 加载并显示附件
+        this.loadDetailAttachments(articleId);
 
         // 生成并显示文章大纲
         this.generateOutline();
@@ -695,6 +872,36 @@ class KnowledgeBlog {
         });
     }
 
+    async loadDetailAttachments(articleId) {
+        const section = document.getElementById('detailAttachments');
+        const list = document.getElementById('attachmentDownloadList');
+        if (!section || !list) return;
+
+        try {
+            const response = await fetch(`${this.apiBase}/articles/${articleId}/attachments`);
+            if (response.ok) {
+                const attachments = await response.json();
+                if (attachments.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                section.style.display = 'block';
+                list.innerHTML = attachments.map(a => `
+                    <li class="attachment-download-item">
+                        <i class="fas fa-file"></i>
+                        <span class="attachment-name">${a.original_filename}</span>
+                        <span class="attachment-size">${this.formatFileSize(a.file_size)}</span>
+                        <a href="${this.apiBase}/attachments/${a.id}/download" class="btn-download" download>
+                            <i class="fas fa-download"></i> 下载
+                        </a>
+                    </li>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('加载附件失败:', error);
+        }
+    }
+
     hideArticleDetail() {
         const detailView = document.getElementById('articleDetailView');
         const articlesContainer = document.getElementById('articlesContainer');
@@ -717,7 +924,9 @@ class KnowledgeBlog {
             document.getElementById('docTags').value = '';
             document.getElementById('docContent').value = '';
             document.getElementById('modalTitle').textContent = '写文章';
+            document.getElementById('attachmentsSection').style.display = 'none';
             this.editingArticleId = null;
+            this.attachments = [];
         }
     }
 
@@ -735,14 +944,126 @@ class KnowledgeBlog {
         document.getElementById('docTags').value = article.tags || '';
         document.getElementById('docContent').value = article.content;
         document.getElementById('modalTitle').textContent = '编辑文章';
-        // 直接打开模态框，不重置表单
+        document.getElementById('attachmentsSection').style.display = '';
+        document.getElementById('attachmentFileName').textContent = '';
+        this.loadAttachments(article.id);
         const modal = document.getElementById('docModal');
         if (modal) {
             modal.classList.add('active');
         }
     }
 
+    async loadAttachments(articleId) {
+        try {
+            const response = await fetch(`${this.apiBase}/articles/${articleId}/attachments`);
+            if (response.ok) {
+                this.attachments = await response.json();
+                this.renderAttachmentList();
+            }
+        } catch (error) {
+            console.error('加载附件失败:', error);
+        }
+    }
+
+    renderAttachmentList() {
+        const list = document.getElementById('attachmentList');
+        if (!list) return;
+        if (!this.attachments || this.attachments.length === 0) {
+            list.innerHTML = '<li class="attachment-empty">暂无附件</li>';
+            return;
+        }
+        list.innerHTML = this.attachments.map(a => `
+            <li class="attachment-item">
+                <span class="attachment-info">
+                    <i class="fas fa-file"></i>
+                    <span class="attachment-name">${a.original_filename}</span>
+                    <span class="attachment-size">${this.formatFileSize(a.file_size)}</span>
+                </span>
+                <button class="btn-delete-attachment" data-id="${a.id}" title="删除附件">
+                    <i class="fas fa-times"></i>
+                </button>
+            </li>
+        `).join('');
+
+        list.querySelectorAll('.btn-delete-attachment').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteAttachment(parseInt(btn.dataset.id));
+            });
+        });
+    }
+
+    formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async uploadAttachment() {
+        if (!this.editingArticleId) return;
+        const fileInput = document.getElementById('attachmentFileInput');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const fileNameEl = document.getElementById('attachmentFileName');
+        fileNameEl.textContent = '上传中...';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch(`${this.apiBase}/articles/${this.editingArticleId}/attachments`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                fileNameEl.textContent = '';
+                await this.loadAttachments(this.editingArticleId);
+                this.showNotification('附件上传成功', 'success');
+            } else {
+                const err = await response.json();
+                if (response.status === 401) {
+                    this.showNotification('请先登录', 'error');
+                } else {
+                    this.showNotification(err.error || '上传失败', 'error');
+                }
+                fileNameEl.textContent = '';
+            }
+        } catch (error) {
+            console.error('附件上传失败:', error);
+            this.showNotification('上传失败', 'error');
+            fileNameEl.textContent = '';
+        }
+
+        fileInput.value = '';
+    }
+
+    async deleteAttachment(attachmentId) {
+        if (!confirm('确定要删除该附件吗？')) return;
+
+        try {
+            const response = await fetch(`${this.apiBase}/attachments/${attachmentId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                await this.loadAttachments(this.editingArticleId);
+                this.showNotification('附件已删除', 'success');
+            } else if (response.status === 401) {
+                this.showNotification('请先登录', 'error');
+            }
+        } catch (error) {
+            console.error('删除附件失败:', error);
+            this.showNotification('删除失败', 'error');
+        }
+    }
+
     async saveArticle() {
+        if (!this.isLoggedIn) {
+            this.showNotification('请先登录', 'error');
+            return;
+        }
+
         const title = document.getElementById('docTitle').value;
         const category = document.getElementById('docCategory').value;
         const tags = document.getElementById('docTags').value;
@@ -756,21 +1077,35 @@ class KnowledgeBlog {
         const data = { title, category, tags, content };
 
         try {
+            let response;
             if (this.editingArticleId) {
-                // 更新
-                await fetch(`${this.apiBase}/articles/${this.editingArticleId}`, {
+                response = await fetch(`${this.apiBase}/articles/${this.editingArticleId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                this.showNotification('文章更新成功');
             } else {
-                // 创建
-                await fetch(`${this.apiBase}/articles`, {
+                response = await fetch(`${this.apiBase}/articles`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+            }
+
+            if (!response.ok) {
+                const err = await response.json();
+                if (response.status === 401) {
+                    this.showNotification('请先登录', 'error');
+                    this.openLoginModal();
+                } else {
+                    this.showNotification(err.error || '保存失败', 'error');
+                }
+                return;
+            }
+
+            if (this.editingArticleId) {
+                this.showNotification('文章更新成功');
+            } else {
                 this.showNotification('文章发布成功');
             }
 
@@ -785,12 +1120,23 @@ class KnowledgeBlog {
     }
 
     async deleteArticle(articleId) {
+        if (!this.isLoggedIn) {
+            this.showNotification('请先登录', 'error');
+            return;
+        }
+
         if (!confirm('确定要删除这篇文章吗？')) return;
 
         try {
-            await fetch(`${this.apiBase}/articles/${articleId}`, {
+            const response = await fetch(`${this.apiBase}/articles/${articleId}`, {
                 method: 'DELETE'
             });
+
+            if (response.status === 401) {
+                this.showNotification('请先登录', 'error');
+                this.openLoginModal();
+                return;
+            }
             this.showNotification('文章已删除');
             await this.loadArticles();
             this.renderArticles();
@@ -805,7 +1151,34 @@ class KnowledgeBlog {
     openSettings() {
         this.renderCategoryList();
         this.loadSettings();
+        // 同步主题和字体大小的 UI 选中状态
+        this.syncSettingsUI();
+        // 非管理员隐藏分类管理标签页
+        const categoryTab = document.querySelector('.settings-tab[data-tab="category"]');
+        if (categoryTab) {
+            categoryTab.style.display = this.isLoggedIn ? '' : 'none';
+        }
+        // 如果当前在分类管理且未登录，切换到主题设置
+        if (!this.isLoggedIn) {
+            this.switchSettingsTab('theme');
+        }
         this.openModal('settingsModal');
+    }
+
+    syncSettingsUI() {
+        // 同步主题选中状态
+        document.querySelectorAll('.theme-color-option').forEach(opt => {
+            opt.classList.remove('active');
+        });
+        const themeOption = document.querySelector(`.theme-color-option[data-theme="${this.currentTheme || 'default'}"]`);
+        if (themeOption) themeOption.classList.add('active');
+
+        // 同步字体大小选中状态
+        document.querySelectorAll('.font-size-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const fontSizeBtn = document.querySelector(`.font-size-btn[data-size="${this.currentFontSize || 'medium'}"]`);
+        if (fontSizeBtn) fontSizeBtn.classList.add('active');
     }
 
     switchSettingsTab(tabName) {
@@ -821,53 +1194,33 @@ class KnowledgeBlog {
     }
 
     changeTheme(theme) {
-        const themeColors = {
-            'default': { primary: '#3498db', accent: '#3498db', hover: '#2980b9' },
-            'green': { primary: '#27ae60', accent: '#27ae60', hover: '#229954' },
-            'purple': { primary: '#9b59b6', accent: '#9b59b6', hover: '#8e44ad' },
-            'orange': { primary: '#e67e22', accent: '#e67e22', hover: '#d35400' },
-            'red': { primary: '#e74c3c', accent: '#e74c3c', hover: '#c0392b' },
-            'dark': { primary: '#2c3e50', accent: '#3498db', hover: '#34495e' }
-        };
+        this.applyTheme(theme);
 
-        const colors = themeColors[theme];
-        if (colors) {
-            document.documentElement.style.setProperty('--primary-color', colors.primary);
-            document.documentElement.style.setProperty('--accent-color', colors.accent);
-            document.documentElement.style.setProperty('--accent-hover', colors.hover);
+        // 更新选中状态
+        document.querySelectorAll('.theme-color-option').forEach(opt => {
+            opt.classList.remove('active');
+        });
+        const target = document.querySelector(`.theme-color-option[data-theme="${theme}"]`);
+        if (target) target.classList.add('active');
 
-            // 更新选中状态
-            document.querySelectorAll('.theme-color-option').forEach(opt => {
-                opt.classList.remove('active');
-            });
-            document.querySelector(`.theme-color-option[data-theme="${theme}"]`).classList.add('active');
-
-            this.currentTheme = theme;
-            this.saveSettings();
-            this.showNotification('主题已更换', 'success');
-        }
+        this.currentTheme = theme;
+        this.saveSettings();
+        this.showNotification('主题已更换', 'success');
     }
 
     changeFontSize(size) {
-        const fontSizes = {
-            'small': '14px',
-            'medium': '16px',
-            'large': '18px'
-        };
+        this.applyFontSize(size);
 
-        if (fontSizes[size]) {
-            document.documentElement.style.setProperty('--base-font-size', fontSizes[size]);
+        // 更新选中状态
+        document.querySelectorAll('.font-size-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const target = document.querySelector(`.font-size-btn[data-size="${size}"]`);
+        if (target) target.classList.add('active');
 
-            // 更新选中状态
-            document.querySelectorAll('.font-size-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.querySelector(`.font-size-btn[data-size="${size}"]`).classList.add('active');
-
-            this.currentFontSize = size;
-            this.saveSettings();
-            this.showNotification('字体大小已调整', 'success');
-        }
+        this.currentFontSize = size;
+        this.saveSettings();
+        this.showNotification('字体大小已调整', 'success');
     }
 
     updateDisplaySetting(key, value) {
@@ -896,33 +1249,30 @@ class KnowledgeBlog {
         if (saved) {
             const settings = JSON.parse(saved);
 
-            // 应用主题
+            // 应用主题 (静默应用，不触发保存和通知)
             if (settings.theme) {
-                this.changeTheme(settings.theme);
+                this.applyTheme(settings.theme);
+                this.currentTheme = settings.theme;
             }
 
-            // 应用字体大小
+            // 应用字体大小 (静默应用)
             if (settings.fontSize) {
-                this.changeFontSize(settings.fontSize);
+                this.applyFontSize(settings.fontSize);
+                this.currentFontSize = settings.fontSize;
             }
 
-            // 应用显示设置
+            // 应用显示设置 (合并默认值)
             if (settings.displaySettings) {
-                this.displaySettings = settings.displaySettings;
-                const showViews = document.getElementById('showArticleViews');
-                const showDate = document.getElementById('showArticleDate');
-                const showTags = document.getElementById('showArticleTags');
-
-                if (showViews) showViews.checked = settings.displaySettings.showViews;
-                if (showDate) showDate.checked = settings.displaySettings.showDate;
-                if (showTags) showTags.checked = settings.displaySettings.showTags;
+                this.displaySettings = {
+                    showViews: settings.displaySettings.showViews !== false,
+                    showDate: settings.displaySettings.showDate !== false,
+                    showTags: settings.displaySettings.showTags !== false
+                };
             }
 
             // 应用每页文章数
             if (settings.articlesPerPage) {
                 this.articlesPerPage = settings.articlesPerPage;
-                const select = document.getElementById('articlesPerPageSelect');
-                if (select) select.value = settings.articlesPerPage;
             }
 
             // 应用分类设置
@@ -932,6 +1282,47 @@ class KnowledgeBlog {
             if (settings.categoryIcons) {
                 this.categoryIcons = settings.categoryIcons;
             }
+        }
+
+        // 同步 UI 控件状态
+        const showViews = document.getElementById('showArticleViews');
+        const showDate = document.getElementById('showArticleDate');
+        const showTags = document.getElementById('showArticleTags');
+        const select = document.getElementById('articlesPerPageSelect');
+        if (showViews) showViews.checked = this.displaySettings.showViews;
+        if (showDate) showDate.checked = this.displaySettings.showDate;
+        if (showTags) showTags.checked = this.displaySettings.showTags;
+        if (select) select.value = this.articlesPerPage;
+    }
+
+    applyTheme(theme) {
+        const themeColors = {
+            'default': { primary: '#3498db', accent: '#3498db', hover: '#2980b9' },
+            'green': { primary: '#27ae60', accent: '#27ae60', hover: '#229954' },
+            'purple': { primary: '#9b59b6', accent: '#9b59b6', hover: '#8e44ad' },
+            'orange': { primary: '#e67e22', accent: '#e67e22', hover: '#d35400' },
+            'red': { primary: '#e74c3c', accent: '#e74c3c', hover: '#c0392b' },
+            'dark': { primary: '#2c3e50', accent: '#3498db', hover: '#34495e' }
+        };
+
+        const colors = themeColors[theme];
+        if (colors) {
+            document.documentElement.style.setProperty('--primary-color', colors.primary);
+            document.documentElement.style.setProperty('--accent-color', colors.accent);
+            document.documentElement.style.setProperty('--accent-hover', colors.hover);
+        }
+    }
+
+    applyFontSize(size) {
+        const fontSizes = {
+            'small': '14px',
+            'medium': '16px',
+            'large': '18px'
+        };
+
+        if (fontSizes[size]) {
+            document.documentElement.style.setProperty('--base-font-size', fontSizes[size]);
+            document.documentElement.style.fontSize = fontSizes[size];
         }
     }
 
@@ -1093,7 +1484,7 @@ class KnowledgeBlog {
                 item.classList.add('active');
                 this.currentCategory = item.dataset.category;
                 this.currentPage = 1;
-                this.renderArticles();
+                this.hideArticleDetail();
             });
         });
     }
