@@ -102,6 +102,121 @@ body {
     background: var(--card-bg);
 }
 
+/* 搜索建议下拉 */
+.search-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    max-height: 360px;
+    overflow-y: auto;
+    z-index: 1500;
+    display: none;
+}
+
+.search-suggestions.active {
+    display: block;
+}
+
+.search-suggestions-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-light);
+    font-size: 0.8125rem;
+}
+
+.search-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.search-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.search-suggestion-item:hover,
+.search-suggestion-item.active {
+    background: var(--bg-color);
+}
+
+.search-suggestion-item .suggestion-icon {
+    color: var(--accent-color);
+    font-size: 0.875rem;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+}
+
+.search-suggestion-item .suggestion-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-suggestion-item .suggestion-title {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-suggestion-item .suggestion-title .highlight {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.search-suggestion-item .suggestion-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    font-size: 0.75rem;
+    color: var(--text-light);
+}
+
+.search-suggestion-item .suggestion-meta .suggestion-category {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+}
+
+.search-suggestion-item .suggestion-tags {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    flex-shrink: 0;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-suggestion-item .suggestion-excerpt {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 3px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.search-suggestion-item .suggestion-excerpt .highlight {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
 .user-actions {
     display: flex;
     gap: 10px;
@@ -1077,6 +1192,55 @@ body {
 .detail-body th {
     background: var(--bg-color);
     font-weight: 600;
+}
+
+/* 脚注样式 */
+.footnotes {
+    margin-top: 2em;
+    padding-top: 1em;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+.footnotes h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 0.5em;
+}
+
+.footnotes ol {
+    padding-left: 1.5em;
+}
+
+.footnotes li {
+    margin-bottom: 0.5em;
+}
+
+.footnotes li p {
+    display: inline;
+    margin: 0;
+}
+
+.footnote-ref a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.footnote-ref a:hover {
+    text-decoration: underline;
+}
+
+.footnote-backref {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 0.875em;
+}
+
+.footnote-backref:hover {
+    text-decoration: underline;
 }
 
 /* PDF文本内容折叠样式 */

@@ -17,6 +17,13 @@ import zipfile
 import xml.etree.ElementTree as ET
 import fitz  # PyMuPDF
 import easyofd
+import mimetypes
+
+# 注册字体 MIME 类型 —— Windows 的 mimetypes 数据库不含 woff2/ttf，
+# 若不注册，Flask 返回字体文件时缺少 Content-Type，浏览器会拒绝加载（图标显示为方框）
+mimetypes.add_type('font/woff2', '.woff2')
+mimetypes.add_type('font/woff', '.woff')
+mimetypes.add_type('font/ttf', '.ttf')
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
@@ -52,6 +59,31 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
+
+    # 创建分类表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            icon TEXT NOT NULL DEFAULT 'fa-folder',
+            sort_order INTEGER DEFAULT 0
+        )
+    ''')
+
+    # 插入默认分类
+    cursor.execute('SELECT COUNT(*) FROM categories')
+    if cursor.fetchone()[0] == 0:
+        default_categories = [
+            ('tech', '编程技术', 'fa-code', 1),
+            ('project', '项目文档', 'fa-project-diagram', 2),
+            ('study', '学习笔记', 'fa-graduation-cap', 3),
+            ('idea', '灵感想法', 'fa-lightbulb', 4),
+        ]
+        cursor.executemany('''
+            INSERT INTO categories (key, name, icon, sort_order)
+            VALUES (?, ?, ?, ?)
+        ''', default_categories)
 
     # 创建附件表
     cursor.execute('''
@@ -299,6 +331,95 @@ def get_stats():
         'categories': [dict(c) for c in categories]
     })
 
+
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    """获取所有分类"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM categories ORDER BY sort_order')
+    categories = cursor.fetchall()
+    conn.close()
+    return jsonify([dict(c) for c in categories])
+
+
+@app.route('/api/categories', methods=['POST'])
+@login_required
+def create_category():
+    """创建分类"""
+    data = request.get_json()
+    key = data.get('key', '').strip().lower()
+    name = data.get('name', '').strip()
+    icon = data.get('icon', 'fa-folder').strip()
+
+    if not key or not name:
+        return jsonify({'error': '分类键名和名称不能为空'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM categories WHERE key = ?', (key,))
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return jsonify({'error': '该分类键名已存在'}), 409
+
+    cursor.execute('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories')
+    next_order = cursor.fetchone()[0]
+
+    cursor.execute('''
+        INSERT INTO categories (key, name, icon, sort_order)
+        VALUES (?, ?, ?, ?)
+    ''', (key, name, icon, next_order))
+    conn.commit()
+    cat_id = cursor.lastrowid
+    conn.close()
+
+    return jsonify({'id': cat_id, 'key': key, 'name': name, 'icon': icon, 'message': '创建成功'}), 201
+
+
+@app.route('/api/categories/<string:key>', methods=['PUT'])
+@login_required
+def update_category(key):
+    """更新分类（重命名）"""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    icon = data.get('icon', '').strip()
+
+    if not name:
+        return jsonify({'error': '分类名称不能为空'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE categories SET name = ?, icon = ? WHERE key = ?',
+                   (name, icon, key))
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': '分类不存在'}), 404
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '更新成功'})
+
+
+@app.route('/api/categories/<string:key>', methods=['DELETE'])
+@login_required
+def delete_category_api(key):
+    """删除分类（需管理员，且分类下无文章）"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT COUNT(*) FROM articles WHERE category = ?', (key,))
+    count = cursor.fetchone()[0]
+    if count > 0:
+        conn.close()
+        return jsonify({'error': f'该分类下有{count}篇文章，无法删除'}), 400
+
+    cursor.execute('DELETE FROM categories WHERE key = ?', (key,))
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'error': '分类不存在'}), 404
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': '删除成功'})
 
 
 @app.route('/api/upload/file', methods=['POST'])

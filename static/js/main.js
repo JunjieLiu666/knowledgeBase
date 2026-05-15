@@ -34,11 +34,43 @@ class KnowledgeBlog {
 
     async init() {
         this.loadSettings();
+        this.initMarked();
+        await this.loadCategories();
+        this.updateCategorySidebar();
+        this.updateCategoryDropdown();
         await this.loadArticles();
         await this.checkAuthStatus();
         this.bindEvents();
         this.renderArticles();
         this.updateStats();
+    }
+
+    initMarked() {
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true,
+                gfm: true
+            });
+        }
+    }
+
+    async loadCategories() {
+        try {
+            const response = await fetch(`${this.apiBase}/categories`);
+            if (response.ok) {
+                const categories = await response.json();
+                const names = { 'all': '全部文章' };
+                const icons = {};
+                categories.forEach(c => {
+                    names[c.key] = c.name;
+                    icons[c.key] = c.icon;
+                });
+                this.categoryNames = names;
+                this.categoryIcons = icons;
+            }
+        } catch (error) {
+            console.error('加载分类失败:', error);
+        }
     }
 
     async loadArticles() {
@@ -112,6 +144,85 @@ class KnowledgeBlog {
         return filtered;
     }
 
+    showSearchSuggestions(query) {
+        const dropdown = document.getElementById('searchSuggestions');
+        if (!dropdown) return;
+
+        const q = query.toLowerCase();
+        const matches = this.articles.filter(a => {
+            const title = a.title.toLowerCase();
+            const content = a.content.toLowerCase();
+            const tags = (a.tags || '').toLowerCase();
+            return title.includes(q) || content.includes(q) || tags.includes(q);
+        }).slice(0, 8);
+
+        if (matches.length === 0) {
+            dropdown.innerHTML = '<div class="search-suggestions-empty">未找到匹配的文章，按回车查看全部结果</div>';
+        } else {
+            dropdown.innerHTML = matches.map(a => {
+                const title = this.highlightMatch(a.title, query);
+                const catName = this.categoryNames[a.category] || a.category;
+                const excerpt = this.getContentExcerpt(a.content, query);
+                return `
+                    <div class="search-suggestion-item" data-id="${a.id}">
+                        <i class="fas fa-file-alt suggestion-icon"></i>
+                        <div class="suggestion-info">
+                            <div class="suggestion-title">${title}</div>
+                            <div class="suggestion-meta">
+                                <span class="suggestion-category category-badge ${a.category}">${catName}</span>
+                                ${excerpt ? `<span class="suggestion-excerpt">${excerpt}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            dropdown.querySelectorAll('.search-suggestion-item').forEach(item => {
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const id = parseInt(item.dataset.id);
+                    this.showArticleDetail(id);
+                    this.hideSearchSuggestions();
+                    document.getElementById('searchInput').value = '';
+                    this.searchQuery = '';
+                });
+            });
+        }
+
+        dropdown.classList.add('active');
+    }
+
+    hideSearchSuggestions() {
+        const dropdown = document.getElementById('searchSuggestions');
+        if (dropdown) {
+            dropdown.classList.remove('active');
+        }
+    }
+
+    updateSuggestionSelection(items, index) {
+        items.forEach((item, i) => {
+            item.classList.toggle('active', i === index);
+        });
+    }
+
+    highlightMatch(text, query) {
+        const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return text.replace(regex, '<span class="highlight">$1</span>');
+    }
+
+    getContentExcerpt(content, query) {
+        const q = query.toLowerCase();
+        const plain = content.replace(/[#*`>\[\]!\-|]/g, '').replace(/\n+/g, ' ');
+        const idx = plain.toLowerCase().indexOf(q);
+        if (idx === -1) return '';
+        const start = Math.max(0, idx - 20);
+        const end = Math.min(plain.length, idx + query.length + 30);
+        let excerpt = plain.substring(start, end);
+        if (start > 0) excerpt = '...' + excerpt;
+        if (end < plain.length) excerpt = excerpt + '...';
+        return this.highlightMatch(excerpt, query);
+    }
+
     renderArticles() {
         const container = document.getElementById('articlesContainer');
         if (!container) return;
@@ -127,29 +238,47 @@ class KnowledgeBlog {
         this.updatePagination(filtered.length);
     }
 
+    preprocessFootnotes(content) {
+        const footnotes = [];
+        const fnDefRegex = /^\[\^(\w+)\]:\s*(.+)$/gm;
+        let match;
+
+        while ((match = fnDefRegex.exec(content)) !== null) {
+            footnotes.push({ id: match[1], text: match[2] });
+        }
+
+        let processed = content.replace(fnDefRegex, '');
+
+        processed = processed.replace(/\[\^(\w+)\]/g, (full, id) => {
+            const fn = footnotes.find(f => f.id === id);
+            if (fn) {
+                return `<sup class="footnote-ref"><a id="fnref:${id}" href="#fn:${id}">[${id}]</a></sup>`;
+            }
+            return full;
+        });
+
+        if (footnotes.length > 0) {
+            let fnHtml = '<hr>\n<div class="footnotes">\n<h4>脚注</h4>\n<ol>\n';
+            footnotes.forEach(fn => {
+                fnHtml += `<li id="fn:${fn.id}"><p>${fn.text} <a href="#fnref:${fn.id}" class="footnote-backref">↩</a></p></li>\n`;
+            });
+            fnHtml += '</ol>\n</div>';
+            processed = processed.replace(/\n*$/, '') + '\n\n' + fnHtml;
+        }
+
+        return processed;
+    }
+
     renderMarkdown(content) {
         if (typeof marked !== 'undefined') {
-            // 配置marked选项
-            marked.setOptions({
-                breaks: true,
-                gfm: true
-            });
-            // 先解析Markdown，然后处理HTML标签
+            content = this.preprocessFootnotes(content);
             let html = marked.parse(content);
             return html;
         }
-        // 如果marked库未加载，返回原始内容
         return content.replace(/\n/g, '<br>');
     }
 
     createArticleCard(article) {
-        const categoryNames = {
-            'tech': '编程技术',
-            'project': '项目文档',
-            'study': '学习笔记',
-            'idea': '灵感想法'
-        };
-
         const showViews = this.displaySettings.showViews !== false;
         const showDate = this.displaySettings.showDate !== false;
         const showTags = this.displaySettings.showTags !== false;
@@ -170,7 +299,7 @@ class KnowledgeBlog {
             <article class="article-card" data-id="${article.id}">
                 <div class="article-header">
                     <div class="article-meta">
-                        <span class="category-badge ${article.category}">${categoryNames[article.category] || article.category}</span>
+                        <span class="category-badge ${article.category}">${this.categoryNames[article.category] || article.category}</span>
                         ${showDate ? `<span class="article-date"><i class="fas fa-calendar-alt"></i> ${article.created_at}</span>` : ''}
                         ${showViews ? `<span class="article-views"><i class="fas fa-eye"></i> ${article.views}</span>` : ''}
                     </div>
@@ -470,13 +599,50 @@ class KnowledgeBlog {
             });
         }
 
-        // 搜索功能
+        // 搜索功能 - 自动建议
         const searchInput = document.getElementById('searchInput');
+        const searchSuggestions = document.getElementById('searchSuggestions');
         if (searchInput) {
+            let selectedIndex = -1;
+
             searchInput.addEventListener('input', (e) => {
                 this.searchQuery = e.target.value;
-                this.currentPage = 1;
-                this.renderArticles();
+                selectedIndex = -1;
+                if (this.searchQuery.trim()) {
+                    this.showSearchSuggestions(this.searchQuery);
+                } else {
+                    this.hideSearchSuggestions();
+                    this.currentPage = 1;
+                    this.renderArticles();
+                }
+            });
+
+            searchInput.addEventListener('keydown', (e) => {
+                const items = searchSuggestions.querySelectorAll('.search-suggestion-item');
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                    this.updateSuggestionSelection(items, selectedIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, -1);
+                    this.updateSuggestionSelection(items, selectedIndex);
+                } else if (e.key === 'Enter') {
+                    if (selectedIndex >= 0 && items[selectedIndex]) {
+                        e.preventDefault();
+                        items[selectedIndex].click();
+                    } else {
+                        this.hideSearchSuggestions();
+                        this.currentPage = 1;
+                        this.renderArticles();
+                    }
+                } else if (e.key === 'Escape') {
+                    this.hideSearchSuggestions();
+                }
+            });
+
+            searchInput.addEventListener('blur', () => {
+                setTimeout(() => this.hideSearchSuggestions(), 200);
             });
         }
 
@@ -770,16 +936,9 @@ class KnowledgeBlog {
 
         this.currentArticle = article;
 
-        const categoryNames = {
-            'tech': '编程技术',
-            'project': '项目文档',
-            'study': '学习笔记',
-            'idea': '灵感想法'
-        };
-
         // 填充详情页
         document.getElementById('detailTitle').textContent = article.title;
-        document.getElementById('detailCategory').textContent = categoryNames[article.category] || article.category;
+        document.getElementById('detailCategory').textContent = this.categoryNames[article.category] || article.category;
         document.getElementById('detailCategory').className = 'category-badge ' + article.category;
         document.getElementById('detailDate').textContent = article.created_at;
         document.getElementById('detailViews').textContent = article.views;
@@ -918,9 +1077,15 @@ class KnowledgeBlog {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.add('active');
+            // 确保分类下拉框与最新分类同步
+            this.updateCategoryDropdown();
             // 重置表单
             document.getElementById('docTitle').value = '';
-            document.getElementById('docCategory').value = 'tech';
+            // 默认选中第一个可用分类
+            const catSelect = document.getElementById('docCategory');
+            if (catSelect && catSelect.options.length > 0) {
+                catSelect.value = catSelect.options[0].value;
+            }
             document.getElementById('docTags').value = '';
             document.getElementById('docContent').value = '';
             document.getElementById('modalTitle').textContent = '写文章';
@@ -1237,9 +1402,7 @@ class KnowledgeBlog {
             theme: this.currentTheme || 'default',
             fontSize: this.currentFontSize || 'medium',
             displaySettings: this.displaySettings || { showViews: true, showDate: true, showTags: true },
-            articlesPerPage: this.articlesPerPage,
-            categoryNames: this.categoryNames,
-            categoryIcons: this.categoryIcons
+            articlesPerPage: this.articlesPerPage
         };
         localStorage.setItem('knowledgeBlogSettings', JSON.stringify(settings));
     }
@@ -1273,14 +1436,6 @@ class KnowledgeBlog {
             // 应用每页文章数
             if (settings.articlesPerPage) {
                 this.articlesPerPage = settings.articlesPerPage;
-            }
-
-            // 应用分类设置
-            if (settings.categoryNames) {
-                this.categoryNames = settings.categoryNames;
-            }
-            if (settings.categoryIcons) {
-                this.categoryIcons = settings.categoryIcons;
             }
         }
 
@@ -1380,7 +1535,12 @@ class KnowledgeBlog {
         });
     }
 
-    addCategory() {
+    async addCategory() {
+        if (!this.isLoggedIn) {
+            this.showNotification('请先登录', 'error');
+            return;
+        }
+
         const nameInput = document.getElementById('newCategoryName');
         const iconInput = document.getElementById('newCategoryIcon');
         const keyInput = document.getElementById('newCategoryKey');
@@ -1394,45 +1554,90 @@ class KnowledgeBlog {
             return;
         }
 
-        // 检查键名是否已存在
-        if (this.categoryNames[key]) {
-            this.showNotification('该分类键名已存在', 'error');
+        try {
+            const response = await fetch(`${this.apiBase}/categories`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, name, icon })
+            });
+
+            if (response.status === 401) {
+                this.showNotification('请先登录', 'error');
+                return;
+            }
+            if (response.status === 409) {
+                this.showNotification('该分类键名已存在', 'error');
+                return;
+            }
+            if (!response.ok) {
+                const err = await response.json();
+                this.showNotification(err.error || '添加失败', 'error');
+                return;
+            }
+
+            // 刷新本地分类数据
+            await this.loadCategories();
+            this.updateCategorySidebar();
+            this.updateCategoryDropdown();
+
+            nameInput.value = '';
+            iconInput.value = '';
+            keyInput.value = '';
+
+            this.renderCategoryList();
+            this.showNotification('分类添加成功', 'success');
+        } catch (error) {
+            console.error('添加分类失败:', error);
+            this.showNotification('添加失败', 'error');
+        }
+    }
+
+    async editCategory(key) {
+        if (!this.isLoggedIn) {
+            this.showNotification('请先登录', 'error');
             return;
         }
 
-        // 添加新分类
-        this.categoryNames[key] = name;
-        this.categoryIcons[key] = icon;
-
-        // 更新左侧分类列表
-        this.updateCategorySidebar();
-
-        // 清空输入框
-        nameInput.value = '';
-        iconInput.value = '';
-        keyInput.value = '';
-
-        // 重新渲染管理列表
-        this.renderCategoryList();
-
-        this.showNotification('分类添加成功', 'success');
-    }
-
-    editCategory(key) {
         const currentName = this.categoryNames[key];
         const currentIcon = this.categoryIcons[key] || 'fa-folder';
 
         const newName = prompt('请输入新的分类名称:', currentName);
         if (newName && newName.trim()) {
-            this.categoryNames[key] = newName.trim();
-            this.updateCategorySidebar();
-            this.renderCategoryList();
-            this.showNotification('分类更新成功', 'success');
+            try {
+                const response = await fetch(`${this.apiBase}/categories/${encodeURIComponent(key)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim(), icon: currentIcon })
+                });
+
+                if (response.status === 401) {
+                    this.showNotification('请先登录', 'error');
+                    return;
+                }
+                if (!response.ok) {
+                    const err = await response.json();
+                    this.showNotification(err.error || '更新失败', 'error');
+                    return;
+                }
+
+                await this.loadCategories();
+                this.updateCategorySidebar();
+                this.updateCategoryDropdown();
+                this.renderCategoryList();
+                this.showNotification('分类更新成功', 'success');
+            } catch (error) {
+                console.error('更新分类失败:', error);
+                this.showNotification('更新失败', 'error');
+            }
         }
     }
 
-    deleteCategory(key) {
-        // 检查是否有文章使用该分类
+    async deleteCategory(key) {
+        if (!this.isLoggedIn) {
+            this.showNotification('请先登录', 'error');
+            return;
+        }
+
         const count = this.articles.filter(a => a.category === key).length;
         if (count > 0) {
             this.showNotification(`该分类下有${count}篇文章，无法删除`, 'error');
@@ -1440,11 +1645,30 @@ class KnowledgeBlog {
         }
 
         if (confirm(`确定要删除分类"${this.categoryNames[key]}"吗？`)) {
-            delete this.categoryNames[key];
-            delete this.categoryIcons[key];
-            this.updateCategorySidebar();
-            this.renderCategoryList();
-            this.showNotification('分类删除成功', 'success');
+            try {
+                const response = await fetch(`${this.apiBase}/categories/${encodeURIComponent(key)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.status === 401) {
+                    this.showNotification('请先登录', 'error');
+                    return;
+                }
+                if (!response.ok) {
+                    const err = await response.json();
+                    this.showNotification(err.error || '删除失败', 'error');
+                    return;
+                }
+
+                await this.loadCategories();
+                this.updateCategorySidebar();
+                this.updateCategoryDropdown();
+                this.renderCategoryList();
+                this.showNotification('分类删除成功', 'success');
+            } catch (error) {
+                console.error('删除分类失败:', error);
+                this.showNotification('删除失败', 'error');
+            }
         }
     }
 
@@ -1487,6 +1711,20 @@ class KnowledgeBlog {
                 this.hideArticleDetail();
             });
         });
+    }
+
+    updateCategoryDropdown() {
+        const select = document.getElementById('docCategory');
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = Object.entries(this.categoryNames)
+            .filter(([key]) => key !== 'all')
+            .map(([key, name]) => `<option value="${key}">${name}</option>`)
+            .join('');
+        // 恢复之前选中的值（如果还存在）
+        if ([...select.options].some(o => o.value === currentVal)) {
+            select.value = currentVal;
+        }
     }
 
     showNotification(message, type = 'success') {
